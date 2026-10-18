@@ -75,10 +75,27 @@
     a.click();
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
   }
+  // A web app can't write to the camera roll directly. On iPhone the share sheet has
+  // "Save Image/Video"; on Android a download lands in the gallery's Downloads album.
+  // Must be called straight from a tap, before any await, or the browser blocks it.
+  function saveToRoll(files) {
+    if (!files.length) return;
+    const android = /Android/i.test(navigator.userAgent);
+    if (!android && navigator.share && navigator.canShare && navigator.canShare({ files })) {
+      navigator.share({ files }).catch((e) => {
+        if (e && e.name !== "AbortError") toast("Couldn't open the save menu");
+      });
+    } else {
+      files.forEach((f) => download(f, f.name));
+    }
+  }
+  const extOf = (type) => ({ "image/jpeg": "jpg", "image/png": "png", "image/heic": "heic", "video/mp4": "mp4",
+    "video/quicktime": "mov", "video/webm": "webm" })[type] || (type.split("/")[1] || "bin");
+  const fileFor = (blob, p, n) => new File([blob], `${(p.code || "project").replace(/[^\w-]+/g, "")}-${n}.${extOf(blob.type)}`, { type: blob.type });
 
   // ---------- state ----------
   function blank() {
-    const settings = { prefixes: { ...DEFAULT_PREFIX } };
+    const settings = { prefixes: { ...DEFAULT_PREFIX }, saveToRoll: true };
     for (const [kind, pk] of Object.entries(PICKS)) {
       settings[kind] = { wood: [...pk.defaults.wood], leather: [...pk.defaults.leather] };
     }
@@ -96,6 +113,7 @@
     for (const k of Object.keys(DEFAULT_PREFIX)) {
       if (typeof pre[k] === "string" && pre[k].trim()) out.settings.prefixes[k] = pre[k].trim().toUpperCase();
     }
+    out.settings.saveToRoll = !(s.settings && s.settings.saveToRoll === false);
     for (const kind of Object.keys(PICKS)) {
       const saved = (s.settings && s.settings[kind]) || {};
       for (const k of Object.keys(LINES)) {
@@ -192,7 +210,7 @@
       keys: () => tx("readonly", (s) => s.getAllKeys()),
     };
   })();
-  const urls = new Map();
+  const urls = new Map(), blobs = new Map();
   const mediaAttr = (id) => (urls.has(id) ? `src="${urls.get(id)}"` : `data-media="${esc(id)}"`);
   async function mediaURL(id) {
     if (urls.has(id)) return urls.get(id);
@@ -200,6 +218,7 @@
     if (!rec) return "";
     const u = URL.createObjectURL(rec.blob);
     urls.set(id, u);
+    blobs.set(id, rec.blob);
     return u;
   }
   function hydrate() {
@@ -215,6 +234,7 @@
   }
   function forgetURL(id) {
     if (urls.has(id)) { URL.revokeObjectURL(urls.get(id)); urls.delete(id); }
+    blobs.delete(id);
   }
   async function shrinkImage(file) {
     try {
@@ -273,7 +293,7 @@
     } catch {
       return toast("Camera not available. Allow camera access, or use Choose from library.");
     }
-    cam = { stream, p, count: 0 };
+    cam = { stream, p, count: 0, files: [] };
     modal.classList.add("full");
     openModal(`<div class="camera">
       <video id="camVideo" autoplay playsinline muted></video>
@@ -281,7 +301,7 @@
       <div class="cam-bar">
         <span></span>
         <button class="shutter" data-action="snap" aria-label="Take photo"></button>
-        <button class="btn cam-done" data-action="close">Done <span id="camCount"></span></button>
+        <button class="btn cam-done" data-action="camDone">Done <span id="camCount"></span></button>
       </div>
     </div>`);
     $("#camVideo").srcObject = stream;
@@ -309,9 +329,20 @@
     p.updated = Date.now();
     save();
     cam.count++;
+    cam.files.push(fileFor(blob, p, p.photos.length));
     urls.set(id, URL.createObjectURL(blob));
+    blobs.set(id, blob);
     $("#camStrip").insertAdjacentHTML("afterbegin", `<img alt="" src="${urls.get(id)}">`);
     $("#camCount").textContent = `(${cam.count})`;
+  }
+
+  let recording = false;
+  function openVideoInput(id, record) {
+    const input = $("#videoInput");
+    pendingMediaFor = id;
+    recording = record;
+    if (record) input.setAttribute("capture", "environment"); else input.removeAttribute("capture");
+    input.click();
   }
 
   const blobToDataURL = (blob) => new Promise((res, rej) => {
@@ -503,7 +534,10 @@
             <button class="btn small" data-action="addVideos" data-id="${esc(p.id)}">＋ Add</button></div>
           ${p.videos.length ? p.videos.map((m) => `<div class="vid">
               <video controls playsinline preload="metadata" ${mediaAttr(m)}></video>
-              <button class="link danger small" data-action="delVideo" data-id="${esc(p.id)}" data-m="${esc(m)}">Remove video</button>
+              <div class="vid-tools">
+                <button class="link small" data-action="saveOne" data-id="${esc(p.id)}" data-m="${esc(m)}">⬇ Save to camera roll</button>
+                <button class="link danger small" data-action="delVideo" data-id="${esc(p.id)}" data-m="${esc(m)}">Remove video</button>
+              </div>
             </div>`).join("") : `<p class="muted small">No videos yet.</p>`}
         </section>
 
@@ -663,6 +697,7 @@
       <div class="actions">
         <button class="btn ghost danger" data-action="delPhoto" data-id="${esc(p.id)}" data-i="${i}">Delete</button>
         ${i > 0 ? `<button class="btn ghost" data-action="cover" data-id="${esc(p.id)}" data-i="${i}">Make cover</button>` : ""}
+        <button class="btn ghost" data-action="saveOne" data-id="${esc(p.id)}" data-m="${esc(p.photos[i])}">Save to camera roll</button>
         <button class="btn" data-action="close">Close</button>
       </div>
     </div>`;
@@ -679,6 +714,10 @@
         </div>
         <p class="hint">Codes are prefix + 2-digit year + item number, e.g. ${esc(pre.wood)}2601. Changing a prefix only affects new projects.</p>
         <button class="btn small">Save codes</button>
+      </fieldset>
+      <fieldset><legend>Camera roll</legend>
+        <label class="check"><input type="checkbox" id="saveToRollSetting"${state.settings.saveToRoll ? " checked" : ""}> Save photos and videos I take in the app to my camera roll</label>
+        <p class="hint">On iPhone, tap <b>Save Images</b> / <b>Save Video</b> in the menu that pops up. Photos picked from your library aren't saved again.</p>
       </fieldset>
       <fieldset><legend>Backup</legend>
         <p class="hint">Everything is stored only on this device. Download a backup now and then so nothing is lost if the phone is replaced.</p>
@@ -852,9 +891,31 @@
       <div class="actions"><button class="btn ghost" data-action="close">Cancel</button></div>
     </div>`),
     pickPhotos(el) { closeModal(); pendingMediaFor = el.dataset.id; $("#photoInput").click(); },
+    camDone() {
+      if (cam && state.settings.saveToRoll) saveToRoll(cam.files);
+      closeModal();
+    },
+    addVideos: (el) => openModal(`<div class="form">
+      <h2>Add a video</h2>
+      <button class="btn big block" data-action="recordVideo" data-id="${esc(el.dataset.id)}">🎥 Record video</button>
+      <button class="btn ghost big block" data-action="pickVideos" data-id="${esc(el.dataset.id)}">🖼 Choose from library</button>
+      <div class="actions"><button class="btn ghost" data-action="close">Cancel</button></div>
+    </div>`),
+    recordVideo(el) { closeModal(); openVideoInput(el.dataset.id, true); },
+    pickVideos(el) { closeModal(); openVideoInput(el.dataset.id, false); },
+    saveRecorded() {
+      saveToRoll(ui.toSave || []);
+      ui.toSave = null;
+      closeModal();
+    },
+    saveOne(el) {
+      const p = pOf(el), id = el.dataset.m, blob = blobs.get(id);
+      if (!blob) return toast("Still loading. Try again in a moment");
+      const list = p.photos.includes(id) ? p.photos : p.videos;
+      saveToRoll([fileFor(blob, p, list.indexOf(id) + 1)]);
+    },
     camera: (el) => openCamera(pOf(el)),
     snap,
-    addVideos(el) { pendingMediaFor = el.dataset.id; $("#videoInput").click(); },
     photo: (el) => { const p = pOf(el); modal.innerHTML = ""; openModal(photoViewer(p, Number(el.dataset.i))); },
     cover(el) {
       const p = pOf(el), i = Number(el.dataset.i);
@@ -973,8 +1034,27 @@
     if (t.id === "photoInput" || t.id === "videoInput") {
       const files = [...t.files];
       t.value = "";
-      addMedia(find(pendingMediaFor), files, t.id === "photoInput" ? "photo" : "video");
+      const p = find(pendingMediaFor), recorded = t.id === "videoInput" && recording;
+      recording = false;
+      addMedia(p, files, t.id === "photoInput" ? "photo" : "video").then(() => {
+        // The share menu needs a fresh tap, so ask rather than open it here.
+        if (!recorded || !files.length || !state.settings.saveToRoll || !p) return;
+        ui.toSave = files.map((f, i) => fileFor(f, p, p.videos.length - files.length + i + 1));
+        openModal(`<div class="form">
+          <h2>Video added</h2>
+          <p>Save a copy to your camera roll too?</p>
+          <div class="actions">
+            <button class="btn ghost" data-action="close">Not now</button>
+            <button class="btn" data-action="saveRecorded">Save to camera roll</button>
+          </div>
+        </div>`);
+      });
       return;
+    }
+    if (t.id === "saveToRollSetting") {
+      state.settings.saveToRoll = t.checked;
+      save();
+      return toast(t.checked ? "Will save to camera roll" : "Won't save to camera roll");
     }
     if (t.id === "importInput") {
       const file = t.files[0];

@@ -312,3 +312,4 @@ dialog.full .modal-in { padding: 0; height: 100%; }
   background: #fff; box-shadow: inset 0 0 0 4px #000;
 }
 .shutter:active { transform: scale(.92); }
+.vid-tools { display: flex; justify-content: space-between; gap: 10px; }

@@ -19,7 +19,8 @@ It then opens like a normal app and works without internet.
 - Description, purpose, size and materials cost
 - **Materials** and **Finish** (beeswax, CA glue, Danish oil…): tap to pick from a list. Type in the box and tap **Add** to put a new choice on the list. Remove choices from the lists in ⚙︎ Settings.
 - Photos: **Take photos** opens the camera inside the app, so you can take several in a row and then tap **Done**. Or choose from your photo library. The first photo is the cover; tap a photo to make it the cover or delete it.
-- Videos
+- Videos: **Record video** opens the camera, or choose one from your library.
+- **Camera roll:** photos and videos taken in the app are offered to your camera roll. On iPhone, tap **Save Images** / **Save Video** in the menu that pops up. On Android they go to the Downloads album. Turn this off in ⚙︎ Settings. Any photo or video can also be saved later with **Save to camera roll**.
 - **Timer:** tap ▶ Start when you begin working and ■ Stop when you finish. It keeps counting even if you close the app. Open **Time log** to fix a session you forgot to stop, delete an entry (×), add time by hand, or **Reset timer** back to zero.
 - Sale details: asking price, sold price, date, buyer and where it sold. If you enter a materials cost, the app works out your profit and what you earned per hour.
 
