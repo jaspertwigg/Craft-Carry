@@ -344,3 +344,7 @@ dialog.full .modal-in { padding: 0; height: 100%; }
 .shutter:active { transform: scale(.92); }
 .vid-tools { display: flex; justify-content: space-between; gap: 10px; }
 .full .modal-in > :last-child { margin-bottom: 0; }
+
+.unknowns { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: -4px; }
+.form input[type="date"]:disabled { opacity: .45; }
+.clock.unknown { color: var(--muted); }

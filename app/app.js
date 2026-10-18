@@ -95,9 +95,10 @@
 
   // ---------- state ----------
   function blank() {
-    const settings = { prefixes: { ...DEFAULT_PREFIX }, saveToRoll: true };
+    const settings = { prefixes: { ...DEFAULT_PREFIX }, saveToRoll: true, schema: 2, used: {} };
     for (const [kind, pk] of Object.entries(PICKS)) {
       settings[kind] = { wood: [...pk.defaults.wood], leather: [...pk.defaults.leather] };
+      settings.used[kind] = { wood: {}, leather: {} };
     }
     return { settings, projects: [] };
   }
@@ -123,9 +124,41 @@
       }
     }
     if (Array.isArray(s.projects)) out.projects = s.projects.filter((x) => x && x.id && LINES[x.line]).map(normProject);
+    if (!(s.settings && s.settings.schema >= 2)) moveFinishesOutOfMaterials(out);
+    out.settings.schema = 2;
     // Anything used on a project belongs in that workshop's choice list.
     for (const p of out.projects) for (const kind of Object.keys(PICKS)) for (const m of p[kind]) addOption(kind, p.line, m, out.settings);
+    const used = (s.settings && s.settings.used) || {};
+    for (const kind of Object.keys(PICKS)) {
+      for (const k of Object.keys(LINES)) {
+        const src = (used[kind] && used[kind][k]) || {}, dst = out.settings.used[kind][k];
+        for (const [name, t] of Object.entries(src)) if (Number.isFinite(t)) dst[name] = t;
+      }
+    }
+    // Before "recently used" was tracked, fall back to when each project was last saved.
+    if (!(s.settings && s.settings.used)) for (const p of out.projects) markUsed(p, p.updated, out.settings);
     return out;
+  }
+  // Early versions put finishes (beeswax, oils, edge paint…) in the materials list; move them across once.
+  const OLD_FINISH_MATERIALS = ["Danish oil", "Food-safe oil", "Beeswax", "Polyurethane", "Edge paint", "Leather dye", "Neatsfoot oil"];
+  function moveFinishesOutOfMaterials(out) {
+    for (const line of Object.keys(LINES)) {
+      const isFinish = (m) => hasItem(OLD_FINISH_MATERIALS, m) || hasItem(out.settings.finishes[line], m);
+      out.settings.materials[line] = out.settings.materials[line].filter((m) => !isFinish(m));
+      for (const p of out.projects.filter((x) => x.line === line)) {
+        for (const m of p.materials.filter(isFinish)) {
+          if (!hasItem(p.finishes, m)) p.finishes.push(m);
+          addOption("finishes", line, m, out.settings);
+        }
+        p.materials = p.materials.filter((m) => !isFinish(m));
+      }
+    }
+  }
+  function markUsed(p, t = Date.now(), settings = state.settings) {
+    for (const kind of Object.keys(PICKS)) {
+      const used = settings.used[kind][p.line];
+      for (const m of p[kind]) used[m.toLowerCase()] = Math.max(used[m.toLowerCase()] || 0, t);
+    }
   }
   const pickList = (v) => (Array.isArray(v) ? v : str(v).split(/[,;]/)).map((m) => str(m).trim()).filter(Boolean);
   function normProject(x) {
@@ -134,7 +167,7 @@
     return {
       id: String(x.id), line: x.line, name: str(x.name), code: str(x.code),
       status: STATUSES.includes(x.status) ? x.status : "In progress",
-      start: str(x.start), end: str(x.end), purpose: str(x.purpose), description: str(x.description),
+      start: str(x.start), end: str(x.end), datesUnknown: !!x.datesUnknown, timeUnknown: !!x.timeUnknown, purpose: str(x.purpose), description: str(x.description),
       materials: pickList(x.materials), finishes: pickList(x.finishes),
       dimensions: str(x.dimensions), cost: str(x.cost), notes: str(x.notes),
       sale: { asking: str(sale.asking), price: str(sale.price), date: str(sale.date), buyer: str(sale.buyer),
@@ -381,12 +414,12 @@
       : `<span class="thumb ph">${LINES[p.line].emoji}</span>`;
   }
   function timeBit(p) {
-    return running(p)
-      ? `<b class="live">⏱ <span data-timer="${esc(p.id)}">${fmtClock(totalMs(p))}</span></b>`
-      : `⏱ ${fmtDur(totalMs(p))}`;
+    if (running(p)) return `<b class="live">⏱ <span data-timer="${esc(p.id)}">${fmtClock(totalMs(p))}</span></b>`;
+    return p.timeUnknown ? "⏱ time unknown" : `⏱ ${fmtDur(totalMs(p))}`;
   }
   function card(p) {
-    const dates = p.start ? fmtDate(p.start) + (p.end ? " → " + fmtDate(p.end) : "") : "No start date";
+    const dates = p.datesUnknown ? "Date unknown"
+      : p.start ? fmtDate(p.start) + (p.end ? " → " + fmtDate(p.end) : "") : "No start date";
     return `<button class="pcard" data-action="go" data-to="#/p/${esc(p.id)}">
       ${thumb(p)}
       <span class="pbody">
@@ -462,7 +495,8 @@
       const ms = totalMs(p), run = running(p);
       const L = LINES[p.line];
       const row = (label, val) => (val ? `<dt>${label}</dt><dd>${val}</dd>` : "");
-      const price = num(p.sale.price), cost = num(p.cost), hours = ms / 36e5;
+      const price = num(p.sale.price), cost = num(p.cost), hours = p.timeUnknown ? 0 : ms / 36e5;
+      const unknownClock = p.timeUnknown && !run && !ms;
       const profit = price != null ? price - (cost || 0) : null;
       const sessions = p.sessions.map((t, i) => ({ ...t, i })).sort((a, b) => b.start - a.start);
       const sale = p.sale;
@@ -482,8 +516,10 @@
         <section class="card timer${run ? " on" : ""}">
           <div class="timer-top">
             <div>
-              <div class="clock big" data-timer="${esc(p.id)}">${fmtClock(ms)}</div>
-              <div class="muted small">${run ? "Timing since " + fmtTime(run.start) : `Total time · ${p.sessions.length} session${p.sessions.length === 1 ? "" : "s"}`}</div>
+              ${unknownClock ? `<div class="clock big unknown">Unknown</div>` : `<div class="clock big" data-timer="${esc(p.id)}">${fmtClock(ms)}</div>`}
+              <div class="muted small">${run ? "Timing since " + fmtTime(run.start)
+                : p.timeUnknown ? (ms ? "Full time taken unknown · this much recorded" : "Time taken unknown")
+                : `Total time · ${p.sessions.length} session${p.sessions.length === 1 ? "" : "s"}`}</div>
             </div>
             <button class="btn timer-btn${run ? " stop" : ""}" data-action="timer" data-id="${esc(p.id)}">${run ? "■ Stop" : "▶ Start"}</button>
           </div>
@@ -506,10 +542,10 @@
           <h3>Details</h3>
           <dl>
             ${row("Code", esc(p.code))}
-            ${row("Started", fmtDate(p.start))}
+            ${p.datesUnknown ? row("Dates", "Unknown") : `${row("Started", fmtDate(p.start))}
             ${row("Completed", fmtDate(p.end))}
-            ${row("Days start→finish", p.start && p.end ? String(daysBetween(p.start, p.end) + 1) : "")}
-            ${row("Time spent", ms ? fmtDur(ms) : "")}
+            ${row("Days start→finish", p.start && p.end ? String(daysBetween(p.start, p.end) + 1) : "")}`}
+            ${row("Time spent", p.timeUnknown ? "Unknown" + (ms ? ` (${fmtDur(ms)} recorded)` : "") : ms ? fmtDur(ms) : "")}
             ${row("Purpose", esc(p.purpose))}
             ${row("Materials", esc(p.materials.join(", ")))}
             ${row("Finish", esc(p.finishes.join(", ")))}
@@ -629,8 +665,12 @@
       </div>
       ${isNew ? `<p class="hint">Code is filled in automatically: ${esc(state.settings.prefixes[line])} + year + item number. You can change it.</p>` : ""}
       <div class="two dates">
-        <label>Start date<input type="date" name="start" ${v(d.start)}></label>
-        <label>Completed<input type="date" name="end" ${v(d.end)}></label>
+        <label>Start date<input type="date" name="start" ${v(d.start)}${d.datesUnknown ? " disabled" : ""}></label>
+        <label>Completed<input type="date" name="end" ${v(d.end)}${d.datesUnknown ? " disabled" : ""}></label>
+      </div>
+      <div class="unknowns">
+        <label class="check"><input type="checkbox" name="datesUnknown"${d.datesUnknown ? " checked" : ""}> Dates unknown</label>
+        <label class="check"><input type="checkbox" name="timeUnknown"${d.timeUnknown ? " checked" : ""}> Time taken unknown</label>
       </div>
       <label>Purpose<input name="purpose" list="purposes" ${v(d.purpose)} placeholder="Who or what is it for?"></label>
       <datalist id="purposes">${PURPOSES.map((x) => `<option value="${x}">`).join("")}</datalist>
@@ -670,6 +710,8 @@
   function pickField(kind, line, selected) {
     const all = [...state.settings[kind][line]];
     for (const m of selected) if (!hasItem(all, m)) all.push(m);
+    const used = state.settings.used[kind][line], when = (m) => used[m.toLowerCase()] || 0;
+    all.sort((a, b) => when(b) - when(a));
     return `<div class="mat-field">
       <span class="label">${PICKS[kind].label} <small>tap to select</small></span>
       <div class="mats" data-kind="${kind}">${all.map((m) => matChip(m, hasItem(selected, m))).join("")}</div>
@@ -805,8 +847,9 @@
   }
   function exportCSV() {
     const cols = [["Workshop", (p) => LINES[p.line].name], ["Code", (p) => p.code], ["Name", (p) => p.name],
-      ["Status", (p) => p.status], ["Purpose", (p) => p.purpose], ["Start date", (p) => p.start],
-      ["Completion date", (p) => p.end], ["Hours", (p) => (totalMs(p) / 36e5).toFixed(2)],
+      ["Status", (p) => p.status], ["Purpose", (p) => p.purpose], ["Start date", (p) => (p.datesUnknown ? "Unknown" : p.start)],
+      ["Completion date", (p) => (p.datesUnknown ? "Unknown" : p.end)],
+      ["Hours", (p) => (p.timeUnknown ? "Unknown" : (totalMs(p) / 36e5).toFixed(2))],
       ["Materials", (p) => p.materials.join("; ")], ["Finish", (p) => p.finishes.join("; ")], ["Size", (p) => p.dimensions], ["Materials cost", (p) => p.cost],
       ["Asking price", (p) => p.sale.asking], ["Sold for", (p) => p.sale.price], ["Date sold", (p) => p.sale.date],
       ["Buyer", (p) => p.sale.buyer], ["Sold via", (p) => p.sale.where], ["Photos", (p) => p.photos.length],
@@ -854,7 +897,7 @@
       } else {
         p.sessions.push({ start: Date.now(), end: null, manual: false });
         if (p.status === "Idea") p.status = "In progress";
-        if (!p.start) p.start = todayISO();
+        if (!p.start && !p.datesUnknown) p.start = todayISO();
         toast("Timer started");
       }
       p.updated = Date.now();
@@ -981,7 +1024,8 @@
       if (code && state.projects.some((x) => x.id !== id && x.code.toUpperCase() === code)
         && !confirm(`${code} is already used by another project. Save anyway?`)) return;
       const fields = {
-        name, code, status: d.status, start: d.start, end: d.end, purpose: d.purpose.trim(),
+        name, code, status: d.status, datesUnknown: !!d.datesUnknown, timeUnknown: !!d.timeUnknown,
+        start: d.datesUnknown ? "" : d.start || "", end: d.datesUnknown ? "" : d.end || "", purpose: d.purpose.trim(),
         description: d.description.trim(), materials: [...f.querySelectorAll('.mats[data-kind="materials"] .mat.on')].map((b) => b.dataset.v),
         finishes: [...f.querySelectorAll('.mats[data-kind="finishes"] .mat.on')].map((b) => b.dataset.v), dimensions: d.dimensions.trim(),
         cost: d.cost.trim(), notes: d.notes.trim(),
@@ -989,6 +1033,7 @@
           where: d.where.trim(), notes: d.saleNotes.trim() },
       };
       closeModal();
+      markUsed({ line: f.dataset.line, ...fields });
       if (id) {
         Object.assign(find(id), fields, { updated: Date.now() });
         save();
@@ -1096,7 +1141,11 @@
       const year = t.value ? parse(t.value).getFullYear() : new Date().getFullYear();
       f.code.value = nextCode(f.dataset.line, year, f.dataset.id);
     }
-    if (t.name === "status" && DONE.includes(t.value) && !f.end.value) f.end.value = todayISO();
+    if (t.name === "datesUnknown") {
+      for (const n of ["start", "end"]) f[n].disabled = t.checked;
+      if (!t.checked && !f.start.value) f.start.value = todayISO();
+    }
+    if (t.name === "status" && DONE.includes(t.value) && !f.end.value && !f.datesUnknown.checked) f.end.value = todayISO();
     if (t.name === "status" && t.value === "Sold") {
       f.querySelector("details.sale").open = true;
       if (!f.soldDate.value) f.soldDate.value = todayISO();
