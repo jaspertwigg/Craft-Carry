@@ -297,7 +297,9 @@ dialog::backdrop { background: rgba(20, 12, 6, .55); }
 .mat-field { display: grid; gap: 8px; }
 .mat-field .label { font-size: .88rem; color: var(--muted); font-weight: 600; }
 .mat-field small { font-weight: 400; }
-.mats { display: flex; flex-wrap: wrap; gap: 6px; max-height: 210px; overflow-y: auto; }
+.mats { display: flex; flex-wrap: wrap; gap: 6px; }
+.mats:not(:has(.mat:not([hidden]))) { display: none; }
+.mat[hidden] { display: none; }
 .mat {
   border: 1px solid var(--line); background: var(--field); color: var(--ink);
   padding: 7px 12px; border-radius: 99px; font-size: .88rem;
@@ -349,3 +351,4 @@ dialog.full .modal-in { padding: 0; height: 100%; }
 .form input[type="date"]:disabled { opacity: .45; }
 .clock.unknown { color: var(--muted); }
 .icon-btn svg { display: block; margin: auto; }
+[hidden] { display: none !important; }

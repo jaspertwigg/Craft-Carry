@@ -715,17 +715,37 @@
     for (const m of selected) if (!hasItem(all, m)) all.push(m);
     const used = state.settings.used[kind][line], when = (m) => used[m.toLowerCase()] || 0;
     all.sort((a, b) => when(b) - when(a));
+    // Only the 5 most recently used (plus anything already ticked) show up front; the rest are found by searching.
+    let top = 0;
+    const chips = all.map((m) => {
+      const on = hasItem(selected, m), isTop = !on && top < PICK_SHOWN && ++top;
+      return matChip(m, on, !on && !isTop);
+    });
     return `<div class="mat-field">
       <span class="label">${PICKS[kind].label} <small>tap to select</small></span>
-      <div class="mats" data-kind="${kind}">${all.map((m) => matChip(m, hasItem(selected, m))).join("")}</div>
+      <div class="mats" data-kind="${kind}">${chips.join("")}</div>
       <div class="mat-add">
-        <input class="opt-new" data-kind="${kind}" placeholder="Add a new ${PICKS[kind].one}…" autocomplete="off" enterkeyhint="done">
-        <button type="button" class="btn small" data-action="addOpt" data-kind="${kind}">Add</button>
+        <input class="opt-new" type="search" data-kind="${kind}" placeholder="Search or add a ${PICKS[kind].one}…" autocomplete="off" enterkeyhint="done">
+        <button type="button" class="btn small" data-action="addOpt" data-kind="${kind}" hidden>Add</button>
       </div>
     </div>`;
   }
-  const matChip = (m, on) =>
-    `<button type="button" class="mat${on ? " on" : ""}" data-action="toggleMat" data-v="${esc(m)}" aria-pressed="${on}">${esc(m)}</button>`;
+  const PICK_SHOWN = 5;
+  const matChip = (m, on, hidden = false) =>
+    `<button type="button" class="mat${on ? " on" : ""}${hidden ? "" : " top"}" data-action="toggleMat" data-v="${esc(m)}" aria-pressed="${on}"${hidden ? " hidden" : ""}>${esc(m)}</button>`;
+  // Show ticked + top choices when the search box is empty, otherwise ticked + matches, and offer to add what was typed.
+  function refreshPick(field) {
+    const input = field.querySelector(".opt-new"), add = field.querySelector("[data-action=addOpt]");
+    const v = input.value.trim().replace(/\s+/g, " "), q = v.toLowerCase();
+    let exact = false;
+    for (const chip of field.querySelectorAll(".mat")) {
+      const name = chip.dataset.v.toLowerCase();
+      if (name === q) exact = true;
+      chip.hidden = !(chip.classList.contains("on") || (q ? name.includes(q) : chip.classList.contains("top")));
+    }
+    add.hidden = !v || exact;
+    add.textContent = `＋ Add “${v}”`;
+  }
 
   function sessionForm(p, i) {
     const t = p.sessions[i];
@@ -931,6 +951,9 @@
       const on = !el.classList.contains("on");
       el.classList.toggle("on", on);
       el.setAttribute("aria-pressed", on);
+      // Picking a search result clears the search, ready for the next one.
+      const field = el.closest(".mat-field"), input = field && field.querySelector(".opt-new");
+      if (input && input.value) { input.value = ""; refreshPick(field); }
     },
     addOpt(el) {
       const kind = el.dataset.kind, f = el.closest("form");
@@ -946,8 +969,8 @@
       }
       chip.classList.add("on");
       chip.setAttribute("aria-pressed", "true");
-      chip.scrollIntoView({ block: "nearest" });
       input.value = "";
+      refreshPick(input.closest(".mat-field"));
       toast(`${chip.dataset.v} selected`);
     },
     removeOpt(el) {
@@ -1104,6 +1127,7 @@
       if (list && r.name === "line") { list.innerHTML = listHTML(r.line); hydrate(); }
     }
     if (t.name === "code" && t.form && t.form.dataset.form === "project") t.dataset.auto = "0";
+    if (t.classList.contains("opt-new")) refreshPick(t.closest(".mat-field"));
   });
   document.addEventListener("change", (e) => {
     const t = e.target;

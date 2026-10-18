@@ -17,7 +17,7 @@ It then opens like a normal app and works without internet.
 - Name, code (filled in automatically, but you can change it) and status (Idea, In progress, Finished, For sale, Sold, Gifted, Kept)
 - Start and completion dates (tick **Dates unknown** for older pieces; there's also **Time taken unknown**)
 - Description, purpose, size and materials cost
-- **Materials** and **Finish** (beeswax, CA glue, Danish oil…): tap to pick from a list (most recently used first). Type in the box and tap **Add** to put a new choice on the list. Remove choices from the lists in ⚙︎ Settings.
+- **Materials** and **Finish** (beeswax, CA glue, Danish oil…): your 5 most recently used choices are shown; tap to pick. Type in the search box to find any other choice, or tap **＋ Add** to put a new one on the list. Remove choices from the lists in ⚙︎ Settings.
 - Photos: **Take photos** opens the camera inside the app, so you can take several in a row and then tap **Done**. Or choose from your photo library. The first photo is the cover; tap a photo to make it the cover or delete it.
 - Videos: **Record video** opens the camera, or choose one from your library.
 - **Camera roll:** photos and videos taken in the app are offered to your camera roll. On iPhone, tap **Save Images** / **Save Video** in the menu that pops up. On Android they go to the Downloads album. Turn this off in ⚙︎ Settings. Any photo or video can also be saved later with **Save to camera roll**.
