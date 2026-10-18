@@ -583,11 +583,34 @@
   }
 
   // ---------- modals ----------
-  function openModal(html) {
-    modal.innerHTML = `<div class="modal-in">${html}</div>`;
+  // The page behind an open dialog is pinned in place so a swipe only ever scrolls the dialog.
+  let lockedY = null;
+  function lockPage() {
+    if (lockedY != null) return;
+    lockedY = window.scrollY;
+    Object.assign(document.body.style, { position: "fixed", top: `-${lockedY}px`, left: "0", right: "0" });
+  }
+  function unlockPage() {
+    if (lockedY == null) return;
+    Object.assign(document.body.style, { position: "", top: "", left: "", right: "" });
+    window.scrollTo(0, lockedY);
+    lockedY = null;
+  }
+  // sheet: a full-height panel on phones, for long forms.
+  function openModal(html, { sheet = false } = {}) {
+    modal.classList.toggle("sheet", sheet);
+    // autofocus on the wrapper stops the dialog focusing the first field, which pops the keyboard up.
+    modal.innerHTML = `<div class="modal-in" tabindex="-1" autofocus>${html}</div>`;
+    lockPage();
     if (!modal.open) modal.showModal();
+    modal.scrollTop = 0;
+    modal.querySelector(".modal-in").focus({ preventScroll: true });
     hydrate();
   }
+  const sheetHead = (title) => `<div class="sheet-head">
+      <h2>${title}</h2>
+      <button type="button" class="icon-btn" data-action="close" aria-label="Close">×</button>
+    </div>`;
   function closeModal() { if (modal.open) modal.close(); modal.innerHTML = ""; }
 
   function projectForm(p, line) {
@@ -596,17 +619,18 @@
       start: todayISO(), end: "", purpose: "", description: "", materials: [], finishes: [], dimensions: "", cost: "", notes: "", sale: {} };
     const s = d.sale;
     const v = (x) => `value="${esc(x || "")}"`;
-    return `<form data-form="project" data-id="${isNew ? "" : esc(p.id)}" data-line="${line}" class="form">
-      <h2>${isNew ? "New " + esc(LINES[line].name) + " project" : "Edit project"}</h2>
-      <label>Name<input name="name" required ${v(d.name)} placeholder="e.g. Jarrah cutting board"></label>
+    const hasSale = Object.values(s).some(Boolean);
+    return `<form data-form="project" data-id="${isNew ? "" : esc(p.id)}" data-line="${line}" class="form" novalidate>
+      ${sheetHead(isNew ? "New " + esc(LINES[line].name) + " project" : "Edit " + esc(d.code || "project"))}
+      <label>Name<input name="name" ${v(d.name)} placeholder="e.g. Jarrah cutting board" enterkeyhint="next"></label>
       <div class="two">
         <label>Code<input name="code" ${v(d.code)} data-auto="${isNew ? 1 : 0}" autocapitalize="characters"></label>
         <label>Status<select name="status">${STATUSES.map((x) => `<option${x === d.status ? " selected" : ""}>${x}</option>`).join("")}</select></label>
       </div>
       ${isNew ? `<p class="hint">Code is filled in automatically: ${esc(state.settings.prefixes[line])} + year + item number. You can change it.</p>` : ""}
-      <div class="two">
+      <div class="two dates">
         <label>Start date<input type="date" name="start" ${v(d.start)}></label>
-        <label>Completion date<input type="date" name="end" ${v(d.end)}></label>
+        <label>Completed<input type="date" name="end" ${v(d.end)}></label>
       </div>
       <label>Purpose<input name="purpose" list="purposes" ${v(d.purpose)} placeholder="Who or what is it for?"></label>
       <datalist id="purposes">${PURPOSES.map((x) => `<option value="${x}">`).join("")}</datalist>
@@ -619,7 +643,8 @@
           <label>Materials cost ($)<input name="cost" inputmode="decimal" ${v(d.cost)}></label>
         </div>
       </fieldset>
-      <fieldset><legend>Sale details</legend>
+      <details class="sect sale"${hasSale ? " open" : ""}><summary>Sale details${hasSale ? "" : ` <small>optional</small>`}</summary>
+        <div class="sect-body">
         <div class="two">
           <label>Asking price ($)<input name="asking" inputmode="decimal" ${v(s.asking)}></label>
           <label>Sold for ($)<input name="price" inputmode="decimal" ${v(s.price)}></label>
@@ -630,8 +655,11 @@
         </div>
         <label>Sold via<input name="where" ${v(s.where)} placeholder="Market stall, Instagram, Etsy, word of mouth…"></label>
         <label>Sale notes<textarea name="saleNotes" rows="2">${esc(s.notes)}</textarea></label>
-      </fieldset>
-      <label>Other notes<textarea name="notes" rows="3">${esc(d.notes)}</textarea></label>
+        </div>
+      </details>
+      <details class="sect"${d.notes ? " open" : ""}><summary>Other notes${d.notes ? "" : ` <small>optional</small>`}</summary>
+        <div class="sect-body"><textarea name="notes" rows="3" aria-label="Other notes">${esc(d.notes)}</textarea></div>
+      </details>
       <div class="actions">
         <button type="button" class="btn ghost" data-action="close">Cancel</button>
         <button class="btn">Save</button>
@@ -706,7 +734,7 @@
   function settingsHTML() {
     const pre = state.settings.prefixes;
     return `<form data-form="settings" class="form">
-      <h2>Settings</h2>
+      ${sheetHead("Settings")}
       <fieldset><legend>Project codes</legend>
         <div class="two">
           <label>Wood Talking<input name="wood" value="${esc(pre.wood)}" autocapitalize="characters" required></label>
@@ -797,7 +825,7 @@
     back: goBack,
     close: closeModal,
     settings() {
-      openModal(settingsHTML());
+      openModal(settingsHTML(), { sheet: true });
       if (navigator.storage && navigator.storage.estimate) {
         navigator.storage.estimate().then(({ usage, quota }) => {
           const el = $("#storageInfo");
@@ -806,8 +834,8 @@
       }
     },
     filter(el) { ui.status = el.dataset.status; render(); },
-    newProject: (el) => openModal(projectForm(null, el.dataset.line)),
-    edit: (el) => { const p = pOf(el); openModal(projectForm(p, p.line)); },
+    newProject: (el) => openModal(projectForm(null, el.dataset.line), { sheet: true }),
+    edit: (el) => { const p = pOf(el); openModal(projectForm(p, p.line), { sheet: true }); },
     async delProject(el) {
       const p = pOf(el);
       if (!confirm(`Delete ${p.code || p.name}? Its photos, videos and time log will be deleted too.`)) return;
@@ -947,7 +975,7 @@
     project(f) {
       const d = Object.fromEntries(new FormData(f));
       const name = d.name.trim();
-      if (!name) return toast("Give the project a name");
+      if (!name) { f.querySelector("[name=name]").focus(); return toast("Give the project a name"); }
       const code = d.code.trim().toUpperCase();
       const id = f.dataset.id;
       if (code && state.projects.some((x) => x.id !== id && x.code.toUpperCase() === code)
@@ -1069,7 +1097,10 @@
       f.code.value = nextCode(f.dataset.line, year, f.dataset.id);
     }
     if (t.name === "status" && DONE.includes(t.value) && !f.end.value) f.end.value = todayISO();
-    if (t.name === "status" && t.value === "Sold" && !f.soldDate.value) f.soldDate.value = todayISO();
+    if (t.name === "status" && t.value === "Sold") {
+      f.querySelector("details.sale").open = true;
+      if (!f.soldDate.value) f.soldDate.value = todayISO();
+    }
   });
   document.addEventListener("toggle", (e) => {
     if (e.target.matches && e.target.matches(".timer details")) ui.logOpen = e.target.open;
@@ -1079,6 +1110,7 @@
   });
   modal.addEventListener("close", () => {
     modal.innerHTML = "";
+    unlockPage();
     if (!cam) return;
     cam.stream.getTracks().forEach((t) => t.stop());
     const n = cam.count;
