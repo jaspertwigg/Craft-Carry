@@ -113,7 +113,12 @@
     };
   }
   function load() {
-    try { return normalize(JSON.parse(localStorage.getItem(KEY))); } catch { return blank(); }
+    const raw = localStorage.getItem(KEY);
+    try { return normalize(JSON.parse(raw)); } catch {
+      // Never let a bad load be saved over the only copy: park the raw data first.
+      try { if (raw) localStorage.setItem(KEY + "-rescue-" + Date.now(), raw); } catch { /* storage full */ }
+      return blank();
+    }
   }
   function save() {
     try { localStorage.setItem(KEY, JSON.stringify(state)); }
@@ -982,6 +987,8 @@
   });
   document.addEventListener("visibilitychange", () => { if (!document.hidden) tick(); });
 
+  // Ask the browser not to clear this app's storage when the phone is short of space.
+  if (state.projects.length && navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
   if (!history.state) history.replaceState({ d: 0 }, "", location.hash || "#/");
   render();
 })();
