@@ -348,3 +348,4 @@ dialog.full .modal-in { padding: 0; height: 100%; }
 .unknowns { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: -4px; }
 .form input[type="date"]:disabled { opacity: .45; }
 .clock.unknown { color: var(--muted); }
+.icon-btn svg { display: block; margin: auto; }

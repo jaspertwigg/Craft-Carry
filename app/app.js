@@ -554,7 +554,7 @@
           </dl>
           ${p.description ? `<h4>Description</h4><p class="prose">${esc(p.description)}</p>` : ""}
           ${p.notes ? `<h4>Notes</h4><p class="prose">${esc(p.notes)}</p>` : ""}
-          ${!p.description && !p.materials.length && !p.finishes.length && !p.purpose ? `<p class="muted small">Tap <b>Edit</b> to add a description, purpose, materials and finish.</p>` : ""}
+          ${!p.description && !p.materials.length && !p.finishes.length && !p.purpose ? `<p class="muted small">Tap ✎ at the top to add a description, purpose, materials and finish.</p>` : ""}
         </section>
 
         <section class="card">
@@ -588,11 +588,10 @@
             ${row("Profit", profit != null && cost != null ? money(profit) : "")}
             ${row("Per hour", profit != null && hours >= 0.1 ? money(profit / hours) + "/h" : "")}
           </dl>${sale.notes ? `<p class="prose">${esc(sale.notes)}</p>` : ""}`
-          : `<p class="muted small">Not sold yet. Tap <b>Edit</b> to add asking price or sale details.</p>`}
+          : `<p class="muted small">Not sold yet. Tap ✎ at the top to add asking price or sale details.</p>`}
         </section>
 
         <div class="row-actions">
-          <button class="btn block" data-action="edit" data-id="${esc(p.id)}">✎ Edit project</button>
           <button class="btn ghost danger block" data-action="delProject" data-id="${esc(p.id)}">Delete project</button>
         </div>`;
     },
@@ -612,6 +611,10 @@
     const r = route();
     document.body.dataset.line = r.line || "";
     $("#back").hidden = r.name === "home";
+    // On a project page the top-right button edits the project; elsewhere it opens settings.
+    $("#editBtn").hidden = r.name !== "project";
+    $("#editBtn").dataset.id = r.id || "";
+    $("#settingsBtn").hidden = r.name === "project";
     $("#title").textContent = r.name === "home" ? "Workshop Log"
       : r.name === "line" ? LINES[r.line].name : find(r.id).code || find(r.id).name;
     view.innerHTML = views[r.name](r);
