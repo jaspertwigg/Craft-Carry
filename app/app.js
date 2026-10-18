@@ -30,7 +30,7 @@
   const PURPOSES = ["For sale", "Commission", "Gift", "Personal use", "Practice / prototype", "Market stock"];
 
   const $ = (s, r = document) => r.querySelector(s);
-  const view = $("#view"), modal = $("#modal"), toastEl = $("#toast");
+  const view = $("#view"), modal = $("#modal"), pop = $("#pop"), toastEl = $("#toast");
   const ui = { q: "", status: "All", logOpen: false };
   let pendingMediaFor = null;
 
@@ -162,7 +162,7 @@
   }
   const pickList = (v) => (Array.isArray(v) ? v : str(v).split(/[,;]/)).map((m) => str(m).trim()).filter(Boolean);
   function normProject(x) {
-    const sale = x.sale || {};
+    const sale = x.sale || {}, gift = x.gift || {}, kept = x.kept || {};
     const ids = (a) => (Array.isArray(a) ? a.filter((v) => typeof v === "string") : []);
     return {
       id: String(x.id), line: x.line, name: str(x.name), code: str(x.code),
@@ -172,6 +172,8 @@
       dimensions: str(x.dimensions), cost: str(x.cost), notes: str(x.notes),
       sale: { asking: str(sale.asking), price: str(sale.price), date: str(sale.date), buyer: str(sale.buyer),
         where: str(sale.where), notes: str(sale.notes) },
+      gift: { to: str(gift.to), date: str(gift.date), occasion: str(gift.occasion), notes: str(gift.notes) },
+      kept: { where: str(kept.where), notes: str(kept.notes) },
       photos: ids(x.photos), videos: ids(x.videos),
       sessions: (Array.isArray(x.sessions) ? x.sessions : [])
         .filter((t) => t && Number.isFinite(t.start))
@@ -283,6 +285,21 @@
       return blob && blob.size < file.size ? blob : file;
     } catch { return file; }
   }
+  // Photos/videos added in the project form are stored straight away but only attached on Save
+  // (and deleted again on Cancel), so nothing is lost or left behind either way.
+  let draft = null;
+  const targetOf = (id) => (id === "draft" ? draft : find(id));
+  function mediaChanged(target) {
+    if (target === draft) return renderDraftMedia();
+    target.updated = Date.now();
+    save();
+    render();
+  }
+  function discardDraft() {
+    if (!draft) return;
+    for (const id of draft.added) { forgetURL(id); media.del(id).catch(() => {}); }
+    draft = null;
+  }
   async function addMedia(p, files, kind) {
     if (!p || !files.length) return;
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
@@ -294,15 +311,14 @@
         const id = uid();
         await media.put({ id, kind, type: blob.type || file.type, name: file.name, blob, created: Date.now() });
         p[kind === "photo" ? "photos" : "videos"].push(id);
+        if (p === draft) draft.added.push(id);
         added++;
       } catch (e) {
         toast(e && e.name === "QuotaExceededError" ? "Not enough storage space on this device" : "Couldn't save " + file.name);
       }
     }
     if (added) {
-      p.updated = Date.now();
-      save();
-      render();
+      mediaChanged(p);
       toast(`Added ${added} ${kind}${added > 1 ? "s" : ""}`);
     }
   }
@@ -327,8 +343,7 @@
       return toast("Camera not available. Allow camera access, or use Choose from library.");
     }
     cam = { stream, p, count: 0, files: [] };
-    modal.classList.add("full");
-    openModal(`<div class="camera">
+    openPop(`<div class="camera">
       <video id="camVideo" autoplay playsinline muted></video>
       <div class="cam-strip" id="camStrip"></div>
       <div class="cam-bar">
@@ -336,7 +351,7 @@
         <button class="shutter" data-action="snap" aria-label="Take photo"></button>
         <button class="btn cam-done" data-action="camDone">Done <span id="camCount"></span></button>
       </div>
-    </div>`);
+    </div>`, true);
     $("#camVideo").srcObject = stream;
   }
   async function snap() {
@@ -359,8 +374,8 @@
       return toast("Couldn't save the photo. Storage may be full");
     }
     p.photos.push(id);
-    p.updated = Date.now();
-    save();
+    if (p === draft) draft.added.push(id);
+    else { p.updated = Date.now(); save(); }
     cam.count++;
     cam.files.push(fileFor(blob, p, p.photos.length));
     urls.set(id, URL.createObjectURL(blob));
@@ -505,7 +520,7 @@
       return `<section class="hero">
           ${p.photos[0]
             ? `<button class="hero-img" data-action="photo" data-id="${esc(p.id)}" data-i="0"><img alt="" ${mediaAttr(p.photos[0])}></button>`
-            : `<button class="hero-img ph" data-action="addPhotos" data-id="${esc(p.id)}"><span>${L.emoji}</span><small>Add photos</small></button>`}
+            : `<div class="hero-img ph"><span>${L.emoji}</span>${mediaBtns(p.id, "photo")}</div>`}
           <div class="hero-text">
             <div class="prow"><span class="code big">${esc(p.code || "No code")}</span>${statusPill(p.status)}</div>
             <h2>${esc(p.name)}</h2>
@@ -558,16 +573,14 @@
         </section>
 
         <section class="card">
-          <div class="card-head"><h3>Photos <span class="muted">${p.photos.length || ""}</span></h3>
-            <button class="btn small" data-action="addPhotos" data-id="${esc(p.id)}">＋ Add</button></div>
+          <div class="card-head"><h3>Photos <span class="muted">${p.photos.length || ""}</span></h3>${mediaBtns(p.id, "photo")}</div>
           ${p.photos.length ? `<div class="grid">${p.photos.map((m, i) =>
             `<button class="gimg" data-action="photo" data-id="${esc(p.id)}" data-i="${i}"><img alt="" loading="lazy" ${mediaAttr(m)}></button>`).join("")}</div>`
             : `<p class="muted small">No photos yet — add progress shots as you go.</p>`}
         </section>
 
         <section class="card">
-          <div class="card-head"><h3>Videos <span class="muted">${p.videos.length || ""}</span></h3>
-            <button class="btn small" data-action="addVideos" data-id="${esc(p.id)}">＋ Add</button></div>
+          <div class="card-head"><h3>Videos <span class="muted">${p.videos.length || ""}</span></h3>${mediaBtns(p.id, "video")}</div>
           ${p.videos.length ? p.videos.map((m) => `<div class="vid">
               <video controls playsinline preload="metadata" ${mediaAttr(m)}></video>
               <div class="vid-tools">
@@ -577,19 +590,36 @@
             </div>`).join("") : `<p class="muted small">No videos yet.</p>`}
         </section>
 
-        <section class="card">
+        ${p.status === "Gifted" || Object.values(p.gift).some(Boolean) ? `<section class="card">
+          <h3>Gift</h3>
+          ${Object.values(p.gift).some(Boolean) ? `<dl>
+            ${row("Given to", esc(p.gift.to))}
+            ${row("Date given", fmtDate(p.gift.date))}
+            ${row("Occasion", esc(p.gift.occasion))}
+          </dl>${p.gift.notes ? `<p class="prose">${esc(p.gift.notes)}</p>` : ""}`
+          : `<p class="muted small">Tap ✎ at the top to add who it was for.</p>`}
+        </section>` : ""}
+
+        ${p.status === "Kept" || Object.values(p.kept).some(Boolean) ? `<section class="card">
+          <h3>Kept</h3>
+          ${Object.values(p.kept).some(Boolean) ? `<dl>${row("Where / who uses it", esc(p.kept.where))}</dl>
+          ${p.kept.notes ? `<p class="prose">${esc(p.kept.notes)}</p>` : ""}`
+          : `<p class="muted small">Tap ✎ at the top to note where it lives.</p>`}
+        </section>` : ""}
+
+        ${["For sale", "Sold"].includes(p.status) || hasSale ? `<section class="card">
           <h3>Sale details</h3>
           ${hasSale ? `<dl>
             ${row("Asking price", num(sale.asking) != null ? money(num(sale.asking)) : esc(sale.asking))}
             ${row("Sold for", price != null ? money(price) : "")}
             ${row("Date sold", fmtDate(sale.date))}
             ${row("Buyer", esc(sale.buyer))}
-            ${row("Sold via", esc(sale.where))}
+            ${row(p.status === "For sale" ? "Listed on" : "Sold via", esc(sale.where))}
             ${row("Profit", profit != null && cost != null ? money(profit) : "")}
             ${row("Per hour", profit != null && hours >= 0.1 ? money(profit / hours) + "/h" : "")}
           </dl>${sale.notes ? `<p class="prose">${esc(sale.notes)}</p>` : ""}`
-          : `<p class="muted small">Not sold yet. Tap ✎ at the top to add asking price or sale details.</p>`}
-        </section>
+          : `<p class="muted small">Tap ✎ at the top to add the price and sale details.</p>`}
+        </section>` : ""}
 
         <div class="row-actions">
           <button class="btn ghost danger block" data-action="delProject" data-id="${esc(p.id)}">Delete project</button>
@@ -601,7 +631,7 @@
     const q = ui.q.trim().toLowerCase();
     const list = ofLine(line)
       .filter((p) => ui.status === "All" || p.status === ui.status)
-      .filter((p) => !q || [p.name, p.code, p.materials.join(" "), p.finishes.join(" "), p.description, p.purpose, p.sale.buyer, p.notes]
+      .filter((p) => !q || [p.name, p.code, p.materials.join(" "), p.finishes.join(" "), p.description, p.purpose, p.sale.buyer, p.gift.to, p.gift.occasion, p.notes]
         .some((v) => v.toLowerCase().includes(q)))
       .sort((a, b) => b.created - a.created);
     return list.length ? list.map(card).join("") : `<p class="empty">No matching projects.</p>`;
@@ -651,14 +681,27 @@
       <button type="button" class="icon-btn" data-action="close" aria-label="Close">×</button>
     </div>`;
   function closeModal() { if (modal.open) modal.close(); modal.innerHTML = ""; }
+  // Closing the project form throws away photos/videos added in it, so check first.
+  function cancelModal() {
+    if (draft && draft.added.length && !confirm(`Discard the ${draft.added.length} photo/video${draft.added.length > 1 ? "s" : ""} you added?`)) return;
+    closeModal();
+  }
+  // A second dialog that opens on top of the first (camera, quick prompts).
+  function openPop(html, full = false) {
+    pop.classList.toggle("full", full);
+    pop.innerHTML = `<div class="modal-in" tabindex="-1" autofocus>${html}</div>`;
+    if (!pop.open) pop.showModal();
+  }
+  function closePop() { if (pop.open) pop.close(); }
 
+  const DONE_FOR = DONE.join("|");
   function projectForm(p, line) {
     const isNew = !p;
     const d = p || { name: "", code: nextCode(line, new Date().getFullYear()), status: "In progress",
-      start: todayISO(), end: "", purpose: "", description: "", materials: [], finishes: [], dimensions: "", cost: "", notes: "", sale: {} };
-    const s = d.sale;
+      start: todayISO(), end: "", purpose: "", description: "", materials: [], finishes: [], dimensions: "", cost: "", notes: "",
+      sale: {}, gift: {}, kept: {} };
+    const s = d.sale, g = d.gift, k = d.kept;
     const v = (x) => `value="${esc(x || "")}"`;
-    const hasSale = Object.values(s).some(Boolean);
     return `<form data-form="project" data-id="${isNew ? "" : esc(p.id)}" data-line="${line}" class="form" novalidate>
       ${sheetHead(isNew ? "New " + esc(LINES[line].name) + " project" : "Edit " + esc(d.code || "project"))}
       <label>Name<input name="name" ${v(d.name)} placeholder="e.g. Jarrah cutting board" enterkeyhint="next"></label>
@@ -669,15 +712,13 @@
       ${isNew ? `<p class="hint">Code is filled in automatically: ${esc(state.settings.prefixes[line])} + year + item number. You can change it.</p>` : ""}
       <div class="two dates">
         <label>Start date<input type="date" name="start" ${v(d.start)}${d.datesUnknown ? " disabled" : ""}></label>
-        <label>Completed<input type="date" name="end" ${v(d.end)}${d.datesUnknown ? " disabled" : ""}></label>
+        <label data-for="${DONE_FOR}">Completed<input type="date" name="end" ${v(d.end)}${d.datesUnknown ? " disabled" : ""}></label>
       </div>
-      <div class="unknowns">
-        <label class="check"><input type="checkbox" name="datesUnknown"${d.datesUnknown ? " checked" : ""}> Dates unknown</label>
-        <label class="check"><input type="checkbox" name="timeUnknown"${d.timeUnknown ? " checked" : ""}> Time taken unknown</label>
-      </div>
+      <label class="check"><input type="checkbox" name="datesUnknown"${d.datesUnknown ? " checked" : ""}> Dates unknown</label>
       <label>Purpose<input name="purpose" list="purposes" ${v(d.purpose)} placeholder="Who or what is it for?"></label>
       <datalist id="purposes">${PURPOSES.map((x) => `<option value="${x}">`).join("")}</datalist>
-      <label>Description<textarea name="description" rows="4">${esc(d.description)}</textarea></label>
+      <label>Description<textarea name="description" rows="3">${esc(d.description)}</textarea></label>
+
       <fieldset><legend>Materials, finish &amp; build</legend>
         ${pickField("materials", line, d.materials)}
         ${pickField("finishes", line, d.finishes)}
@@ -686,28 +727,90 @@
           <label>Materials cost ($)<input name="cost" inputmode="decimal" ${v(d.cost)}></label>
         </div>
       </fieldset>
-      <details class="sect sale"${hasSale ? " open" : ""}><summary>Sale details${hasSale ? "" : ` <small>optional</small>`}</summary>
-        <div class="sect-body">
+
+      <fieldset><legend>Time</legend>
+        <p class="hint">${isNew ? "Use the ▶ timer on the project page while you work, or add time you've already spent here."
+          : `Recorded so far: <b>${fmtDur(totalMs(p))}</b>. Add more here, or use the ▶ timer on the project page.`}</p>
+        <div class="two">
+          <label>Add hours<input type="number" name="addH" min="0" step="1" inputmode="numeric" placeholder="0"></label>
+          <label>Add minutes<input type="number" name="addM" min="0" max="59" step="1" inputmode="numeric" placeholder="0"></label>
+        </div>
+        <label class="check"><input type="checkbox" name="timeUnknown"${d.timeUnknown ? " checked" : ""}> Time taken unknown</label>
+      </fieldset>
+
+      <fieldset><legend>Photos</legend>
+        <div id="draftPhotos">${draftMediaHTML("photo")}</div>
+        ${mediaBtns("draft", "photo")}
+      </fieldset>
+      <fieldset><legend>Videos</legend>
+        <div id="draftVideos">${draftMediaHTML("video")}</div>
+        ${mediaBtns("draft", "video")}
+      </fieldset>
+
+      <fieldset data-for="For sale|Sold"><legend>Sale details</legend>
         <div class="two">
           <label>Asking price ($)<input name="asking" inputmode="decimal" ${v(s.asking)}></label>
-          <label>Sold for ($)<input name="price" inputmode="decimal" ${v(s.price)}></label>
+          <label data-for="Sold">Sold for ($)<input name="price" inputmode="decimal" ${v(s.price)}></label>
         </div>
-        <div class="two">
+        <div class="two" data-for="Sold">
           <label>Date sold<input type="date" name="soldDate" ${v(s.date)}></label>
           <label>Buyer<input name="buyer" ${v(s.buyer)}></label>
         </div>
-        <label>Sold via<input name="where" ${v(s.where)} placeholder="Market stall, Instagram, Etsy, word of mouth…"></label>
+        <label><span data-for="Sold">Sold via</span><span data-for="For sale">Listed on</span><input name="where" ${v(s.where)} placeholder="Market stall, Instagram, Etsy, word of mouth…"></label>
         <label>Sale notes<textarea name="saleNotes" rows="2">${esc(s.notes)}</textarea></label>
+      </fieldset>
+      <fieldset data-for="Gifted"><legend>Gift details</legend>
+        <div class="two">
+          <label>Given to<input name="giftTo" ${v(g.to)}></label>
+          <label>Date given<input type="date" name="giftDate" ${v(g.date)}></label>
         </div>
-      </details>
-      <details class="sect"${d.notes ? " open" : ""}><summary>Other notes${d.notes ? "" : ` <small>optional</small>`}</summary>
-        <div class="sect-body"><textarea name="notes" rows="3" aria-label="Other notes">${esc(d.notes)}</textarea></div>
-      </details>
+        <label>Occasion<input name="giftOccasion" ${v(g.occasion)} placeholder="Birthday, Christmas, wedding…"></label>
+        <label>Gift notes<textarea name="giftNotes" rows="2">${esc(g.notes)}</textarea></label>
+      </fieldset>
+      <fieldset data-for="Kept"><legend>Keeping it</legend>
+        <label>Where it lives / who uses it<input name="keptWhere" ${v(k.where)} placeholder="e.g. Kitchen bench, my everyday wallet"></label>
+        <label>Notes<textarea name="keptNotes" rows="2">${esc(k.notes)}</textarea></label>
+      </fieldset>
+
+      <label>Other notes<textarea name="notes" rows="3">${esc(d.notes)}</textarea></label>
       <div class="actions">
         <button type="button" class="btn ghost" data-action="close">Cancel</button>
         <button class="btn">Save</button>
       </div>
     </form>`;
+  }
+  // Show only the fields that fit the chosen status (sale details for Sold, gift details for Gifted…).
+  function applyStatus(f) {
+    const st = f.querySelector("[name=status]").value;
+    for (const el of f.querySelectorAll("[data-for]")) el.hidden = !el.dataset.for.split("|").includes(st);
+  }
+  function openProjectForm(p, line) {
+    draft = { code: p ? p.code : "", photos: p ? [...p.photos] : [], videos: p ? [...p.videos] : [], added: [], removed: [] };
+    openModal(projectForm(p, line), { sheet: true });
+    applyStatus(modal.querySelector("form"));
+  }
+  function mediaBtns(id, kind) {
+    return `<div class="media-btns">${kind === "photo"
+      ? `<button type="button" class="btn small" data-action="camera" data-id="${esc(id)}">📷 Camera</button>
+        <button type="button" class="btn small ghost" data-action="pickPhotos" data-id="${esc(id)}">🖼 Library</button>`
+      : `<button type="button" class="btn small" data-action="recordVideo" data-id="${esc(id)}">🎥 Record</button>
+        <button type="button" class="btn small ghost" data-action="pickVideos" data-id="${esc(id)}">🖼 Library</button>`}</div>`;
+  }
+  function draftMediaHTML(kind) {
+    const list = kind === "photo" ? draft.photos : draft.videos;
+    if (!list.length) return `<p class="muted small">No ${kind}s yet.</p>`;
+    return `<div class="fm-grid">${list.map((id, i) => `<div class="fm${kind === "video" ? " fm-vid" : ""}">
+      ${kind === "photo" ? `<img alt="" ${mediaAttr(id)}>` : `<video muted playsinline preload="metadata" ${mediaAttr(id)}></video>`}
+      ${kind === "photo" && i === 0 ? `<span class="fm-tag">Cover</span>` : ""}
+      <button type="button" class="fm-x" data-action="draftRemove" data-kind="${kind}" data-m="${esc(id)}" aria-label="Remove">×</button>
+    </div>`).join("")}</div>`;
+  }
+  function renderDraftMedia() {
+    if (!draft) return;
+    const ph = $("#draftPhotos"), vi = $("#draftVideos");
+    if (ph) ph.innerHTML = draftMediaHTML("photo");
+    if (vi) vi.innerHTML = draftMediaHTML("video");
+    hydrate();
   }
 
   function pickField(kind, line, selected) {
@@ -875,7 +978,9 @@
       ["Hours", (p) => (p.timeUnknown ? "Unknown" : (totalMs(p) / 36e5).toFixed(2))],
       ["Materials", (p) => p.materials.join("; ")], ["Finish", (p) => p.finishes.join("; ")], ["Size", (p) => p.dimensions], ["Materials cost", (p) => p.cost],
       ["Asking price", (p) => p.sale.asking], ["Sold for", (p) => p.sale.price], ["Date sold", (p) => p.sale.date],
-      ["Buyer", (p) => p.sale.buyer], ["Sold via", (p) => p.sale.where], ["Photos", (p) => p.photos.length],
+      ["Buyer", (p) => p.sale.buyer], ["Sold via", (p) => p.sale.where],
+      ["Gifted to", (p) => p.gift.to], ["Date given", (p) => p.gift.date], ["Occasion", (p) => p.gift.occasion],
+      ["Kept (where / who)", (p) => p.kept.where], ["Photos", (p) => p.photos.length],
       ["Videos", (p) => p.videos.length], ["Description", (p) => p.description], ["Notes", (p) => p.notes]];
     const cell = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
     const rows = [cols.map((c) => cell(c[0])).join(",")];
@@ -889,7 +994,7 @@
   const actions = {
     go: (el) => navigate(el.dataset.to),
     back: goBack,
-    close: closeModal,
+    close: (el) => (el.closest("dialog") === pop ? closePop() : cancelModal()),
     settings() {
       openModal(settingsHTML(), { sheet: true });
       if (navigator.storage && navigator.storage.estimate) {
@@ -900,8 +1005,8 @@
       }
     },
     filter(el) { ui.status = el.dataset.status; render(); },
-    newProject: (el) => openModal(projectForm(null, el.dataset.line), { sheet: true }),
-    edit: (el) => { const p = pOf(el); openModal(projectForm(p, p.line), { sheet: true }); },
+    newProject: (el) => openProjectForm(null, el.dataset.line),
+    edit: (el) => { const p = pOf(el); openProjectForm(p, p.line); },
     async delProject(el) {
       const p = pOf(el);
       if (!confirm(`Delete ${p.code || p.name}? Its photos, videos and time log will be deleted too.`)) return;
@@ -980,30 +1085,26 @@
       save();
       el.remove();
     },
-    addPhotos: (el) => openModal(`<div class="form">
-      <h2>Add photos</h2>
-      <button class="btn big block" data-action="camera" data-id="${esc(el.dataset.id)}">📷 Take photos</button>
-      <p class="hint">Keep snapping. Tap Done when you've finished.</p>
-      <button class="btn ghost big block" data-action="pickPhotos" data-id="${esc(el.dataset.id)}">🖼 Choose from library</button>
-      <div class="actions"><button class="btn ghost" data-action="close">Cancel</button></div>
-    </div>`),
-    pickPhotos(el) { closeModal(); pendingMediaFor = el.dataset.id; $("#photoInput").click(); },
+    pickPhotos(el) { pendingMediaFor = el.dataset.id; $("#photoInput").click(); },
     camDone() {
       if (cam && state.settings.saveToRoll) saveToRoll(cam.files);
-      closeModal();
+      closePop();
     },
-    addVideos: (el) => openModal(`<div class="form">
-      <h2>Add a video</h2>
-      <button class="btn big block" data-action="recordVideo" data-id="${esc(el.dataset.id)}">🎥 Record video</button>
-      <button class="btn ghost big block" data-action="pickVideos" data-id="${esc(el.dataset.id)}">🖼 Choose from library</button>
-      <div class="actions"><button class="btn ghost" data-action="close">Cancel</button></div>
-    </div>`),
-    recordVideo(el) { closeModal(); openVideoInput(el.dataset.id, true); },
-    pickVideos(el) { closeModal(); openVideoInput(el.dataset.id, false); },
+    recordVideo: (el) => openVideoInput(el.dataset.id, true),
+    pickVideos: (el) => openVideoInput(el.dataset.id, false),
     saveRecorded() {
       saveToRoll(ui.toSave || []);
       ui.toSave = null;
-      closeModal();
+      closePop();
+    },
+    async draftRemove(el) {
+      const kind = el.dataset.kind, id = el.dataset.m, list = kind === "photo" ? draft.photos : draft.videos;
+      if (!confirm(`Remove this ${kind}?`)) return;
+      list.splice(list.indexOf(id), 1);
+      const i = draft.added.indexOf(id);
+      if (i >= 0) { draft.added.splice(i, 1); forgetURL(id); await media.del(id).catch(() => {}); }
+      else draft.removed.push(id);
+      renderDraftMedia();
     },
     saveOne(el) {
       const p = pOf(el), id = el.dataset.m, blob = blobs.get(id);
@@ -1011,7 +1112,11 @@
       const list = p.photos.includes(id) ? p.photos : p.videos;
       saveToRoll([fileFor(blob, p, list.indexOf(id) + 1)]);
     },
-    camera: (el) => openCamera(pOf(el)),
+    camera(el) {
+      const t = targetOf(el.dataset.id);
+      if (t === draft) draft.code = (modal.querySelector("[name=code]") || {}).value || "";
+      openCamera(t);
+    },
     snap,
     photo: (el) => { const p = pOf(el); modal.innerHTML = ""; openModal(photoViewer(p, Number(el.dataset.i))); },
     cover(el) {
@@ -1043,6 +1148,8 @@
   const forms = {
     project(f) {
       const d = Object.fromEntries(new FormData(f));
+      // Fields hidden for the chosen status (e.g. sale details on a gifted piece) are saved empty.
+      for (const el of f.querySelectorAll("[data-for][hidden] [name]")) d[el.name] = "";
       const name = d.name.trim();
       if (!name) { f.querySelector("[name=name]").focus(); return toast("Give the project a name"); }
       const code = d.code.trim().toUpperCase();
@@ -1057,16 +1164,25 @@
         cost: d.cost.trim(), notes: d.notes.trim(),
         sale: { asking: d.asking.trim(), price: d.price.trim(), date: d.soldDate, buyer: d.buyer.trim(),
           where: d.where.trim(), notes: d.saleNotes.trim() },
+        gift: { to: d.giftTo.trim(), date: d.giftDate, occasion: d.giftOccasion.trim(), notes: d.giftNotes.trim() },
+        kept: { where: d.keptWhere.trim(), notes: d.keptNotes.trim() },
+        photos: draft.photos, videos: draft.videos,
       };
+      const addMs = ((Number(d.addH) || 0) * 60 + (Number(d.addM) || 0)) * 6e4;
+      const extra = addMs > 0 ? [{ start: parse(todayISO()).getTime() + 12 * 36e5, end: parse(todayISO()).getTime() + 12 * 36e5 + addMs, manual: true }] : [];
+      for (const m of draft.removed) { forgetURL(m); media.del(m).catch(() => {}); }
+      draft = null;
       closeModal();
       markUsed({ line: f.dataset.line, ...fields });
       if (id) {
-        Object.assign(find(id), fields, { updated: Date.now() });
+        const p = find(id);
+        Object.assign(p, fields, { updated: Date.now() });
+        p.sessions.push(...extra);
         save();
         render();
         toast("Saved");
       } else {
-        const p = normProject({ id: uid(), line: f.dataset.line, ...fields, created: Date.now() });
+        const p = normProject({ id: uid(), line: f.dataset.line, ...fields, sessions: extra, created: Date.now() });
         state.projects.push(p);
         save();
         navigate("#/p/" + p.id);
@@ -1109,7 +1225,8 @@
 
   // ---------- events ----------
   document.addEventListener("click", (e) => {
-    if (e.target === modal) return closeModal();
+    if (e.target === modal) return cancelModal();
+    if (e.target === pop && !cam) return closePop();
     const el = e.target.closest("[data-action]");
     if (!el || el.matches("input, select, textarea")) return;
     const fn = actions[el.dataset.action];
@@ -1134,13 +1251,14 @@
     if (t.id === "photoInput" || t.id === "videoInput") {
       const files = [...t.files];
       t.value = "";
-      const p = find(pendingMediaFor), recorded = t.id === "videoInput" && recording;
+      const p = targetOf(pendingMediaFor), recorded = t.id === "videoInput" && recording;
+      if (p === draft) draft.code = (modal.querySelector("[name=code]") || {}).value || "";
       recording = false;
       addMedia(p, files, t.id === "photoInput" ? "photo" : "video").then(() => {
         // The share menu needs a fresh tap, so ask rather than open it here.
         if (!recorded || !files.length || !state.settings.saveToRoll || !p) return;
         ui.toSave = files.map((f, i) => fileFor(f, p, p.videos.length - files.length + i + 1));
-        openModal(`<div class="form">
+        openPop(`<div class="form">
           <h2>Video added</h2>
           <p>Save a copy to your camera roll too?</p>
           <div class="actions">
@@ -1173,9 +1291,10 @@
       if (!t.checked && !f.start.value) f.start.value = todayISO();
     }
     if (t.name === "status" && DONE.includes(t.value) && !f.end.value && !f.datesUnknown.checked) f.end.value = todayISO();
-    if (t.name === "status" && t.value === "Sold") {
-      f.querySelector("details.sale").open = true;
-      if (!f.soldDate.value) f.soldDate.value = todayISO();
+    if (t.name === "status") {
+      applyStatus(f);
+      if (t.value === "Sold" && !f.soldDate.value) f.soldDate.value = todayISO();
+      if (t.value === "Gifted" && !f.giftDate.value) f.giftDate.value = todayISO();
     }
   });
   document.addEventListener("toggle", (e) => {
@@ -1184,15 +1303,23 @@
   document.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && e.target.classList.contains("opt-new")) { e.preventDefault(); actions.addOpt(e.target); }
   });
+  modal.addEventListener("cancel", (e) => {
+    // Escape / back gesture: same check as tapping Cancel.
+    if (draft && draft.added.length) { e.preventDefault(); cancelModal(); }
+  });
   modal.addEventListener("close", () => {
     modal.innerHTML = "";
     unlockPage();
+    discardDraft();
+  });
+  pop.addEventListener("close", () => {
+    pop.innerHTML = "";
+    pop.classList.remove("full");
     if (!cam) return;
     cam.stream.getTracks().forEach((t) => t.stop());
-    const n = cam.count;
+    const n = cam.count, target = cam.p;
     cam = null;
-    modal.classList.remove("full");
-    render();
+    if (target === draft) renderDraftMedia(); else render();
     if (n) toast(`Added ${n} photo${n > 1 ? "s" : ""}`);
   });
   document.addEventListener("visibilitychange", () => { if (!document.hidden) tick(); });

@@ -352,3 +352,24 @@ dialog.full .modal-in { padding: 0; height: 100%; }
 .clock.unknown { color: var(--muted); }
 .icon-btn svg { display: block; margin: auto; }
 [hidden] { display: none !important; }
+
+/* camera / library buttons, and photo/video thumbnails in the project form */
+.media-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.card-head .media-btns { flex: none; }
+.hero-img.ph .media-btns { justify-content: center; }
+.fm-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.fm { position: relative; aspect-ratio: 1; border-radius: 8px; overflow: hidden; background: var(--line); }
+.fm img, .fm video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.fm-vid::after {
+  content: "▶"; position: absolute; inset: 0; display: grid; place-items: center;
+  color: #fff; font-size: 1.3rem; text-shadow: 0 1px 4px rgba(0, 0, 0, .6); pointer-events: none;
+}
+.fm-x {
+  position: absolute; top: 3px; right: 3px; z-index: 1; width: 26px; height: 26px; border: 0; border-radius: 50%;
+  background: rgba(0, 0, 0, .6); color: #fff; font-size: 1rem; line-height: 1;
+}
+.fm-tag {
+  position: absolute; left: 3px; bottom: 3px; padding: 1px 6px; border-radius: 6px;
+  background: rgba(0, 0, 0, .6); color: #fff; font-size: .7rem;
+}
+.form label > span[hidden] { display: none; }
