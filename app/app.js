@@ -428,19 +428,15 @@
       ? `<img class="thumb" alt="" ${mediaAttr(p.photos[0])}>`
       : `<span class="thumb ph">${LINES[p.line].emoji}</span>`;
   }
-  function timeBit(p) {
-    if (running(p)) return `<b class="live">⏱ <span data-timer="${esc(p.id)}">${fmtClock(totalMs(p))}</span></b>`;
-    return p.timeUnknown ? "⏱ time unknown" : `⏱ ${fmtDur(totalMs(p))}`;
-  }
   function card(p) {
-    const dates = p.datesUnknown ? "Date unknown"
-      : p.start ? fmtDate(p.start) + (p.end ? " → " + fmtDate(p.end) : "") : "No start date";
+    const done = p.datesUnknown ? "Date unknown" : p.end ? "Completed " + fmtDate(p.end) : "";
     return `<button class="pcard" data-action="go" data-to="#/p/${esc(p.id)}">
       ${thumb(p)}
       <span class="pbody">
         <span class="prow"><span class="code">${esc(p.code || "No code")}</span>${statusPill(p.status)}</span>
         <span class="pname">${esc(p.name)}</span>
-        <span class="pmeta">${dates} · ${timeBit(p)}</span>
+        ${done ? `<span class="pmeta">${done}</span>` : ""}
+        ${p.materials.length ? `<span class="pmeta pmats">${esc(p.materials.join(", "))}</span>` : ""}
       </span>
     </button>`;
   }

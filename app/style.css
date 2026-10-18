@@ -150,7 +150,7 @@ h2.section { font-size: 1rem; color: var(--muted); margin: 6px 0 10px; font-weig
 .chip.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 
 /* project cards */
-.list { display: grid; gap: 10px; }
+.list { display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr); }
 .pcard {
   display: flex; gap: 12px; align-items: center; width: 100%; text-align: left;
   background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
@@ -373,3 +373,4 @@ dialog.full .modal-in { padding: 0; height: 100%; }
   background: rgba(0, 0, 0, .6); color: #fff; font-size: .7rem;
 }
 .form label > span[hidden] { display: none; }
+.pmats { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
