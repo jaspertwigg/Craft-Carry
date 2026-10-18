@@ -9,9 +9,20 @@
   };
   const DEFAULT_MATERIALS = {
     wood: ["Jarrah", "Marri", "Sheoak", "Blackbutt", "Tasmanian oak", "Pine", "Walnut", "Oak", "Maple",
-      "Plywood", "MDF", "Danish oil", "Food-safe oil", "Beeswax", "Polyurethane", "Wood glue", "Brass hardware", "Screws"],
+      "Plywood", "MDF", "Wood glue", "Brass hardware", "Screws"],
     leather: ["Veg-tan leather", "Chrome-tan leather", "Kangaroo leather", "Suede", "Waxed thread", "Rivets",
-      "Snaps", "Buckles", "D-rings", "Zips", "Edge paint", "Leather dye", "Neatsfoot oil", "Contact cement"],
+      "Snaps", "Buckles", "D-rings", "Zips", "Contact cement"],
+  };
+  const DEFAULT_FINISHES = {
+    wood: ["Beeswax", "Danish oil", "Tung oil", "Linseed oil", "Food-safe oil", "Hardwax oil", "CA glue", "Shellac",
+      "Polyurethane", "Lacquer", "Stain", "Paint", "Unfinished"],
+    leather: ["Beeswax", "Neatsfoot oil", "Leather balm", "Resolene", "Edge paint", "Tokonole", "Burnished edges",
+      "Leather dye", "Antique finish", "Mink oil", "Unfinished"],
+  };
+  // Pick-list fields: each workshop keeps its own list of choices for each.
+  const PICKS = {
+    materials: { label: "Materials", one: "material", defaults: DEFAULT_MATERIALS },
+    finishes: { label: "Finish", one: "finish", defaults: DEFAULT_FINISHES },
   };
   const DEFAULT_PREFIX = { wood: "WT", leather: "CC" };
   const STATUSES = ["Idea", "In progress", "Finished", "For sale", "Sold", "Gifted", "Kept"];
@@ -67,12 +78,15 @@
 
   // ---------- state ----------
   function blank() {
-    return { settings: { prefixes: { ...DEFAULT_PREFIX },
-      materials: { wood: [...DEFAULT_MATERIALS.wood], leather: [...DEFAULT_MATERIALS.leather] } }, projects: [] };
+    const settings = { prefixes: { ...DEFAULT_PREFIX } };
+    for (const [kind, pk] of Object.entries(PICKS)) {
+      settings[kind] = { wood: [...pk.defaults.wood], leather: [...pk.defaults.leather] };
+    }
+    return { settings, projects: [] };
   }
   const hasItem = (list, v) => list.some((x) => x.toLowerCase() === v.toLowerCase());
-  function addMaterialOption(line, v, settings = state.settings) {
-    const list = settings.materials[line];
+  function addOption(kind, line, v, settings = state.settings) {
+    const list = settings[kind][line];
     if (v && !hasItem(list, v)) list.push(v);
   }
   function normalize(s) {
@@ -82,17 +96,20 @@
     for (const k of Object.keys(DEFAULT_PREFIX)) {
       if (typeof pre[k] === "string" && pre[k].trim()) out.settings.prefixes[k] = pre[k].trim().toUpperCase();
     }
-    const mats = (s.settings && s.settings.materials) || {};
-    for (const k of Object.keys(LINES)) {
-      if (!Array.isArray(mats[k])) continue;
-      out.settings.materials[k] = [];
-      for (const v of mats[k]) if (typeof v === "string" && v.trim()) addMaterialOption(k, v.trim(), out.settings);
+    for (const kind of Object.keys(PICKS)) {
+      const saved = (s.settings && s.settings[kind]) || {};
+      for (const k of Object.keys(LINES)) {
+        if (!Array.isArray(saved[k])) continue;
+        out.settings[kind][k] = [];
+        for (const v of saved[k]) if (typeof v === "string" && v.trim()) addOption(kind, k, v.trim(), out.settings);
+      }
     }
     if (Array.isArray(s.projects)) out.projects = s.projects.filter((x) => x && x.id && LINES[x.line]).map(normProject);
-    // Any material used on a project belongs in that workshop's choice list.
-    for (const p of out.projects) for (const m of p.materials) addMaterialOption(p.line, m, out.settings);
+    // Anything used on a project belongs in that workshop's choice list.
+    for (const p of out.projects) for (const kind of Object.keys(PICKS)) for (const m of p[kind]) addOption(kind, p.line, m, out.settings);
     return out;
   }
+  const pickList = (v) => (Array.isArray(v) ? v : str(v).split(/[,;]/)).map((m) => str(m).trim()).filter(Boolean);
   function normProject(x) {
     const sale = x.sale || {};
     const ids = (a) => (Array.isArray(a) ? a.filter((v) => typeof v === "string") : []);
@@ -100,8 +117,7 @@
       id: String(x.id), line: x.line, name: str(x.name), code: str(x.code),
       status: STATUSES.includes(x.status) ? x.status : "In progress",
       start: str(x.start), end: str(x.end), purpose: str(x.purpose), description: str(x.description),
-      materials: (Array.isArray(x.materials) ? x.materials : str(x.materials).split(/[,;]/))
-        .map((m) => str(m).trim()).filter(Boolean),
+      materials: pickList(x.materials), finishes: pickList(x.finishes),
       dimensions: str(x.dimensions), cost: str(x.cost), notes: str(x.notes),
       sale: { asking: str(sale.asking), price: str(sale.price), date: str(sale.date), buyer: str(sale.buyer),
         where: str(sale.where), notes: str(sale.notes) },
@@ -403,7 +419,7 @@
           <div><b>${s.sold ? money(s.revenue).replace(/\.00$/, "") : "—"}</b><span>${s.sold} sold</span></div>
         </section>
         <button class="btn block big" data-action="newProject" data-line="${line}">＋ New ${esc(LINES[line].name)} project</button>
-        ${list.length ? `<input id="search" type="search" placeholder="Search name, code, materials…" value="${esc(ui.q)}" autocomplete="off">
+        ${list.length ? `<input id="search" type="search" placeholder="Search name, code, materials, finish…" value="${esc(ui.q)}" autocomplete="off">
           <div class="chips">${["All", ...present].map((st) =>
             `<button class="chip${ui.status === st ? " on" : ""}" data-action="filter" data-status="${esc(st)}">${esc(st)}</button>`).join("")}</div>
           <div id="list" class="list">${listHTML(line)}</div>`
@@ -465,12 +481,13 @@
             ${row("Time spent", ms ? fmtDur(ms) : "")}
             ${row("Purpose", esc(p.purpose))}
             ${row("Materials", esc(p.materials.join(", ")))}
+            ${row("Finish", esc(p.finishes.join(", ")))}
             ${row("Size", esc(p.dimensions))}
             ${row("Materials cost", cost != null ? money(cost) : "")}
           </dl>
           ${p.description ? `<h4>Description</h4><p class="prose">${esc(p.description)}</p>` : ""}
           ${p.notes ? `<h4>Notes</h4><p class="prose">${esc(p.notes)}</p>` : ""}
-          ${!p.description && !p.materials.length && !p.purpose ? `<p class="muted small">Tap <b>Edit</b> to add a description, purpose and materials.</p>` : ""}
+          ${!p.description && !p.materials.length && !p.finishes.length && !p.purpose ? `<p class="muted small">Tap <b>Edit</b> to add a description, purpose, materials and finish.</p>` : ""}
         </section>
 
         <section class="card">
@@ -515,7 +532,7 @@
     const q = ui.q.trim().toLowerCase();
     const list = ofLine(line)
       .filter((p) => ui.status === "All" || p.status === ui.status)
-      .filter((p) => !q || [p.name, p.code, p.materials.join(" "), p.description, p.purpose, p.sale.buyer, p.notes]
+      .filter((p) => !q || [p.name, p.code, p.materials.join(" "), p.finishes.join(" "), p.description, p.purpose, p.sale.buyer, p.notes]
         .some((v) => v.toLowerCase().includes(q)))
       .sort((a, b) => b.created - a.created);
     return list.length ? list.map(card).join("") : `<p class="empty">No matching projects.</p>`;
@@ -542,7 +559,7 @@
   function projectForm(p, line) {
     const isNew = !p;
     const d = p || { name: "", code: nextCode(line, new Date().getFullYear()), status: "In progress",
-      start: todayISO(), end: "", purpose: "", description: "", materials: [], dimensions: "", cost: "", notes: "", sale: {} };
+      start: todayISO(), end: "", purpose: "", description: "", materials: [], finishes: [], dimensions: "", cost: "", notes: "", sale: {} };
     const s = d.sale;
     const v = (x) => `value="${esc(x || "")}"`;
     return `<form data-form="project" data-id="${isNew ? "" : esc(p.id)}" data-line="${line}" class="form">
@@ -560,15 +577,9 @@
       <label>Purpose<input name="purpose" list="purposes" ${v(d.purpose)} placeholder="Who or what is it for?"></label>
       <datalist id="purposes">${PURPOSES.map((x) => `<option value="${x}">`).join("")}</datalist>
       <label>Description<textarea name="description" rows="4">${esc(d.description)}</textarea></label>
-      <fieldset><legend>Materials &amp; build</legend>
-        <div class="mat-field">
-          <span class="label">Materials <small>tap to select</small></span>
-          <div class="mats">${materialChips(line, d.materials)}</div>
-          <div class="mat-add">
-            <input id="matNew" placeholder="Add a new material…" autocomplete="off" enterkeyhint="done">
-            <button type="button" class="btn small" data-action="addMat">Add</button>
-          </div>
-        </div>
+      <fieldset><legend>Materials, finish &amp; build</legend>
+        ${pickField("materials", line, d.materials)}
+        ${pickField("finishes", line, d.finishes)}
         <div class="two">
           <label>Size<input name="dimensions" ${v(d.dimensions)} placeholder="e.g. 40 × 25 × 2 cm"></label>
           <label>Materials cost ($)<input name="cost" inputmode="decimal" ${v(d.cost)}></label>
@@ -594,10 +605,17 @@
     </form>`;
   }
 
-  function materialChips(line, selected) {
-    const all = [...state.settings.materials[line]];
+  function pickField(kind, line, selected) {
+    const all = [...state.settings[kind][line]];
     for (const m of selected) if (!hasItem(all, m)) all.push(m);
-    return all.map((m) => matChip(m, hasItem(selected, m))).join("");
+    return `<div class="mat-field">
+      <span class="label">${PICKS[kind].label} <small>tap to select</small></span>
+      <div class="mats" data-kind="${kind}">${all.map((m) => matChip(m, hasItem(selected, m))).join("")}</div>
+      <div class="mat-add">
+        <input class="opt-new" data-kind="${kind}" placeholder="Add a new ${PICKS[kind].one}…" autocomplete="off" enterkeyhint="done">
+        <button type="button" class="btn small" data-action="addOpt" data-kind="${kind}">Add</button>
+      </div>
+    </div>`;
   }
   const matChip = (m, on) =>
     `<button type="button" class="mat${on ? " on" : ""}" data-action="toggleMat" data-v="${esc(m)}" aria-pressed="${on}">${esc(m)}</button>`;
@@ -672,12 +690,13 @@
         </div>
         <p class="hint" id="storageInfo"></p>
       </fieldset>
-      ${Object.keys(LINES).map((line) => `<fieldset><legend>${esc(LINES[line].name)} materials</legend>
+      ${Object.keys(LINES).flatMap((line) => Object.keys(PICKS).map((kind) => `<fieldset>
+        <legend>${esc(LINES[line].name)}: ${PICKS[kind].label.toLowerCase()} choices</legend>
         <p class="hint">Tap × to remove a choice from the list. Projects that already use it keep it.</p>
-        <div class="mats">${state.settings.materials[line].map((m) =>
-          `<button type="button" class="mat on" data-action="removeMat" data-line="${line}" data-v="${esc(m)}">${esc(m)} ×</button>`).join("")
-          || `<span class="muted small">No materials in the list.</span>`}</div>
-      </fieldset>`).join("")}
+        <div class="mats">${state.settings[kind][line].map((m) =>
+          `<button type="button" class="mat on" data-action="removeOpt" data-kind="${kind}" data-line="${line}" data-v="${esc(m)}">${esc(m)} ×</button>`).join("")
+          || `<span class="muted small">Nothing in the list.</span>`}</div>
+      </fieldset>`)).join("")}
       <div class="actions"><button type="button" class="btn" data-action="close">Done</button></div>
     </form>`;
   }
@@ -721,7 +740,7 @@
     const cols = [["Workshop", (p) => LINES[p.line].name], ["Code", (p) => p.code], ["Name", (p) => p.name],
       ["Status", (p) => p.status], ["Purpose", (p) => p.purpose], ["Start date", (p) => p.start],
       ["Completion date", (p) => p.end], ["Hours", (p) => (totalMs(p) / 36e5).toFixed(2)],
-      ["Materials", (p) => p.materials.join("; ")], ["Size", (p) => p.dimensions], ["Materials cost", (p) => p.cost],
+      ["Materials", (p) => p.materials.join("; ")], ["Finish", (p) => p.finishes.join("; ")], ["Size", (p) => p.dimensions], ["Materials cost", (p) => p.cost],
       ["Asking price", (p) => p.sale.asking], ["Sold for", (p) => p.sale.price], ["Date sold", (p) => p.sale.date],
       ["Buyer", (p) => p.sale.buyer], ["Sold via", (p) => p.sale.where], ["Photos", (p) => p.photos.length],
       ["Videos", (p) => p.videos.length], ["Description", (p) => p.description], ["Notes", (p) => p.notes]];
@@ -800,12 +819,13 @@
       el.classList.toggle("on", on);
       el.setAttribute("aria-pressed", on);
     },
-    addMat() {
-      const input = $("#matNew"), f = input.form, v = input.value.trim().replace(/\s+/g, " ");
+    addOpt(el) {
+      const kind = el.dataset.kind, f = el.closest("form");
+      const input = f.querySelector(`.opt-new[data-kind="${kind}"]`), v = input.value.trim().replace(/\s+/g, " ");
       if (!v) return input.focus();
-      addMaterialOption(f.dataset.line, v);
+      addOption(kind, f.dataset.line, v);
       save();
-      const box = f.querySelector(".mats");
+      const box = f.querySelector(`.mats[data-kind="${kind}"]`);
       let chip = [...box.querySelectorAll(".mat")].find((b) => b.dataset.v.toLowerCase() === v.toLowerCase());
       if (!chip) {
         box.insertAdjacentHTML("beforeend", matChip(v, true));
@@ -813,11 +833,12 @@
       }
       chip.classList.add("on");
       chip.setAttribute("aria-pressed", "true");
+      chip.scrollIntoView({ block: "nearest" });
       input.value = "";
       toast(`${chip.dataset.v} selected`);
     },
-    removeMat(el) {
-      const list = state.settings.materials[el.dataset.line];
+    removeOpt(el) {
+      const list = state.settings[el.dataset.kind][el.dataset.line];
       const i = list.findIndex((x) => x === el.dataset.v);
       if (i >= 0) list.splice(i, 1);
       save();
@@ -872,7 +893,8 @@
         && !confirm(`${code} is already used by another project. Save anyway?`)) return;
       const fields = {
         name, code, status: d.status, start: d.start, end: d.end, purpose: d.purpose.trim(),
-        description: d.description.trim(), materials: [...f.querySelectorAll(".mat.on")].map((b) => b.dataset.v), dimensions: d.dimensions.trim(),
+        description: d.description.trim(), materials: [...f.querySelectorAll('.mats[data-kind="materials"] .mat.on')].map((b) => b.dataset.v),
+        finishes: [...f.querySelectorAll('.mats[data-kind="finishes"] .mat.on')].map((b) => b.dataset.v), dimensions: d.dimensions.trim(),
         cost: d.cost.trim(), notes: d.notes.trim(),
         sale: { asking: d.asking.trim(), price: d.price.trim(), date: d.soldDate, buyer: d.buyer.trim(),
           where: d.where.trim(), notes: d.saleNotes.trim() },
@@ -973,7 +995,7 @@
     if (e.target.matches && e.target.matches(".timer details")) ui.logOpen = e.target.open;
   }, true);
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && e.target.id === "matNew") { e.preventDefault(); actions.addMat(); }
+    if (e.key === "Enter" && e.target.classList.contains("opt-new")) { e.preventDefault(); actions.addOpt(e.target); }
   });
   modal.addEventListener("close", () => {
     modal.innerHTML = "";

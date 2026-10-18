@@ -274,7 +274,7 @@ dialog::backdrop { background: rgba(20, 12, 6, .55); }
 }
 .mat.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .mat.on::before { content: "✓ "; }
-.mats .mat[data-action="removeMat"]::before { content: none; }
+.mats .mat[data-action="removeOpt"]::before { content: none; }
 .mat-add { display: flex; gap: 8px; align-items: center; }
 .mat-add input { flex: 1; min-width: 0; }
 
