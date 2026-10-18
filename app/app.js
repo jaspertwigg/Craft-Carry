@@ -4,10 +4,14 @@
   // ---------- constants ----------
   const KEY = "workshop-log-v1";
   const LINES = {
-    wood: { name: "Wood Talking", emoji: "🪵", craft: "Woodwork",
-      materials: "e.g. Jarrah, Danish oil, brass hinges" },
-    leather: { name: "Craft & Carry", emoji: "👜", craft: "Leatherwork",
-      materials: "e.g. 2mm veg-tan, waxed thread, brass rivets" },
+    wood: { name: "Wood Talking", emoji: "🪵", craft: "Woodwork" },
+    leather: { name: "Craft & Carry", emoji: "👜", craft: "Leatherwork" },
+  };
+  const DEFAULT_MATERIALS = {
+    wood: ["Jarrah", "Marri", "Sheoak", "Blackbutt", "Tasmanian oak", "Pine", "Walnut", "Oak", "Maple",
+      "Plywood", "MDF", "Danish oil", "Food-safe oil", "Beeswax", "Polyurethane", "Wood glue", "Brass hardware", "Screws"],
+    leather: ["Veg-tan leather", "Chrome-tan leather", "Kangaroo leather", "Suede", "Waxed thread", "Rivets",
+      "Snaps", "Buckles", "D-rings", "Zips", "Edge paint", "Leather dye", "Neatsfoot oil", "Contact cement"],
   };
   const DEFAULT_PREFIX = { wood: "WT", leather: "CC" };
   const STATUSES = ["Idea", "In progress", "Finished", "For sale", "Sold", "Gifted", "Kept"];
@@ -16,7 +20,7 @@
 
   const $ = (s, r = document) => r.querySelector(s);
   const view = $("#view"), modal = $("#modal"), toastEl = $("#toast");
-  const ui = { q: "", status: "All" };
+  const ui = { q: "", status: "All", logOpen: false };
   let pendingMediaFor = null;
 
   // ---------- helpers ----------
@@ -62,7 +66,15 @@
   }
 
   // ---------- state ----------
-  function blank() { return { settings: { prefixes: { ...DEFAULT_PREFIX } }, projects: [] }; }
+  function blank() {
+    return { settings: { prefixes: { ...DEFAULT_PREFIX },
+      materials: { wood: [...DEFAULT_MATERIALS.wood], leather: [...DEFAULT_MATERIALS.leather] } }, projects: [] };
+  }
+  const hasItem = (list, v) => list.some((x) => x.toLowerCase() === v.toLowerCase());
+  function addMaterialOption(line, v, settings = state.settings) {
+    const list = settings.materials[line];
+    if (v && !hasItem(list, v)) list.push(v);
+  }
   function normalize(s) {
     const out = blank();
     if (!s || typeof s !== "object") return out;
@@ -70,7 +82,15 @@
     for (const k of Object.keys(DEFAULT_PREFIX)) {
       if (typeof pre[k] === "string" && pre[k].trim()) out.settings.prefixes[k] = pre[k].trim().toUpperCase();
     }
+    const mats = (s.settings && s.settings.materials) || {};
+    for (const k of Object.keys(LINES)) {
+      if (!Array.isArray(mats[k])) continue;
+      out.settings.materials[k] = [];
+      for (const v of mats[k]) if (typeof v === "string" && v.trim()) addMaterialOption(k, v.trim(), out.settings);
+    }
     if (Array.isArray(s.projects)) out.projects = s.projects.filter((x) => x && x.id && LINES[x.line]).map(normProject);
+    // Any material used on a project belongs in that workshop's choice list.
+    for (const p of out.projects) for (const m of p.materials) addMaterialOption(p.line, m, out.settings);
     return out;
   }
   function normProject(x) {
@@ -80,7 +100,9 @@
       id: String(x.id), line: x.line, name: str(x.name), code: str(x.code),
       status: STATUSES.includes(x.status) ? x.status : "In progress",
       start: str(x.start), end: str(x.end), purpose: str(x.purpose), description: str(x.description),
-      materials: str(x.materials), dimensions: str(x.dimensions), cost: str(x.cost), notes: str(x.notes),
+      materials: (Array.isArray(x.materials) ? x.materials : str(x.materials).split(/[,;]/))
+        .map((m) => str(m).trim()).filter(Boolean),
+      dimensions: str(x.dimensions), cost: str(x.cost), notes: str(x.notes),
       sale: { asking: str(sale.asking), price: str(sale.price), date: str(sale.date), buyer: str(sale.buyer),
         where: str(sale.where), notes: str(sale.notes) },
       photos: ids(x.photos), videos: ids(x.videos),
@@ -220,6 +242,57 @@
     forgetURL(id);
     await media.del(id).catch(() => {});
   }
+  // In-app camera: keeps the viewfinder open so several photos can be taken in a row.
+  let cam = null;
+  async function openCamera(p) {
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: false,
+        video: { facingMode: { ideal: "environment" }, width: { ideal: 3264 }, height: { ideal: 2448 } } });
+    } catch {
+      return toast("Camera not available. Allow camera access, or use Choose from library.");
+    }
+    cam = { stream, p, count: 0 };
+    modal.classList.add("full");
+    openModal(`<div class="camera">
+      <video id="camVideo" autoplay playsinline muted></video>
+      <div class="cam-strip" id="camStrip"></div>
+      <div class="cam-bar">
+        <span></span>
+        <button class="shutter" data-action="snap" aria-label="Take photo"></button>
+        <button class="btn cam-done" data-action="close">Done <span id="camCount"></span></button>
+      </div>
+    </div>`);
+    $("#camVideo").srcObject = stream;
+  }
+  async function snap() {
+    const v = $("#camVideo");
+    if (!cam || !v || !v.videoWidth) return;
+    const scale = Math.min(1, 2000 / Math.max(v.videoWidth, v.videoHeight));
+    const c = document.createElement("canvas");
+    c.width = Math.round(v.videoWidth * scale);
+    c.height = Math.round(v.videoHeight * scale);
+    c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
+    v.classList.remove("flash");
+    void v.offsetWidth;
+    v.classList.add("flash");
+    const blob = await new Promise((r) => c.toBlob(r, "image/jpeg", 0.85));
+    if (!blob || !cam) return;
+    const id = uid(), p = cam.p;
+    try {
+      await media.put({ id, kind: "photo", type: "image/jpeg", name: `photo-${Date.now()}.jpg`, blob, created: Date.now() });
+    } catch {
+      return toast("Couldn't save the photo. Storage may be full");
+    }
+    p.photos.push(id);
+    p.updated = Date.now();
+    save();
+    cam.count++;
+    urls.set(id, URL.createObjectURL(blob));
+    $("#camStrip").insertAdjacentHTML("afterbegin", `<img alt="" src="${urls.get(id)}">`);
+    $("#camCount").textContent = `(${cam.count})`;
+  }
+
   const blobToDataURL = (blob) => new Promise((res, rej) => {
     const r = new FileReader();
     r.onload = () => res(r.result);
@@ -362,14 +435,18 @@
             </div>
             <button class="btn timer-btn${run ? " stop" : ""}" data-action="timer" data-id="${esc(p.id)}">${run ? "■ Stop" : "▶ Start"}</button>
           </div>
-          <details>
-            <summary>Time log</summary>
+          <details${ui.logOpen ? " open" : ""}>
+            <summary>Time log · edit, delete or reset</summary>
             ${sessions.length ? `<ul class="sessions">${sessions.map((t) => `<li>
               <button class="link" data-action="editSession" data-id="${esc(p.id)}" data-i="${t.i}">
                 <span>${fmtDate(isoOf(new Date(t.start)))}${t.manual ? " · added by hand" : ` · ${fmtTime(t.start)}–${t.end ? fmtTime(t.end) : "now"}`}</span>
                 <b>${t.end ? fmtDur(t.end - t.start) : "running"}</b>
-              </button></li>`).join("")}</ul>` : `<p class="muted small">No time recorded yet.</p>`}
-            <button class="btn ghost small" data-action="addTime" data-id="${esc(p.id)}">＋ Add time by hand</button>
+              </button>
+              <button class="del-x" data-action="delSession" data-id="${esc(p.id)}" data-i="${t.i}" aria-label="Delete this entry">×</button></li>`).join("")}</ul>` : `<p class="muted small">No time recorded yet.</p>`}
+            <div class="timer-tools">
+              <button class="btn ghost small" data-action="addTime" data-id="${esc(p.id)}">＋ Add time by hand</button>
+              ${p.sessions.length ? `<button class="btn ghost small danger" data-action="resetTimer" data-id="${esc(p.id)}">↺ Reset timer</button>` : ""}
+            </div>
           </details>
         </section>
 
@@ -382,13 +459,13 @@
             ${row("Days start→finish", p.start && p.end ? String(daysBetween(p.start, p.end) + 1) : "")}
             ${row("Time spent", ms ? fmtDur(ms) : "")}
             ${row("Purpose", esc(p.purpose))}
-            ${row("Materials", esc(p.materials))}
+            ${row("Materials", esc(p.materials.join(", ")))}
             ${row("Size", esc(p.dimensions))}
             ${row("Materials cost", cost != null ? money(cost) : "")}
           </dl>
           ${p.description ? `<h4>Description</h4><p class="prose">${esc(p.description)}</p>` : ""}
           ${p.notes ? `<h4>Notes</h4><p class="prose">${esc(p.notes)}</p>` : ""}
-          ${!p.description && !p.materials && !p.purpose ? `<p class="muted small">Tap <b>Edit</b> to add a description, purpose and materials.</p>` : ""}
+          ${!p.description && !p.materials.length && !p.purpose ? `<p class="muted small">Tap <b>Edit</b> to add a description, purpose and materials.</p>` : ""}
         </section>
 
         <section class="card">
@@ -433,7 +510,7 @@
     const q = ui.q.trim().toLowerCase();
     const list = ofLine(line)
       .filter((p) => ui.status === "All" || p.status === ui.status)
-      .filter((p) => !q || [p.name, p.code, p.materials, p.description, p.purpose, p.sale.buyer, p.notes]
+      .filter((p) => !q || [p.name, p.code, p.materials.join(" "), p.description, p.purpose, p.sale.buyer, p.notes]
         .some((v) => v.toLowerCase().includes(q)))
       .sort((a, b) => b.created - a.created);
     return list.length ? list.map(card).join("") : `<p class="empty">No matching projects.</p>`;
@@ -460,7 +537,7 @@
   function projectForm(p, line) {
     const isNew = !p;
     const d = p || { name: "", code: nextCode(line, new Date().getFullYear()), status: "In progress",
-      start: todayISO(), end: "", purpose: "", description: "", materials: "", dimensions: "", cost: "", notes: "", sale: {} };
+      start: todayISO(), end: "", purpose: "", description: "", materials: [], dimensions: "", cost: "", notes: "", sale: {} };
     const s = d.sale;
     const v = (x) => `value="${esc(x || "")}"`;
     return `<form data-form="project" data-id="${isNew ? "" : esc(p.id)}" data-line="${line}" class="form">
@@ -479,7 +556,14 @@
       <datalist id="purposes">${PURPOSES.map((x) => `<option value="${x}">`).join("")}</datalist>
       <label>Description<textarea name="description" rows="4">${esc(d.description)}</textarea></label>
       <fieldset><legend>Materials &amp; build</legend>
-        <label>Materials<input name="materials" ${v(d.materials)} placeholder="${esc(LINES[line].materials)}"></label>
+        <div class="mat-field">
+          <span class="label">Materials <small>tap to select</small></span>
+          <div class="mats">${materialChips(line, d.materials)}</div>
+          <div class="mat-add">
+            <input id="matNew" placeholder="Add a new material…" autocomplete="off" enterkeyhint="done">
+            <button type="button" class="btn small" data-action="addMat">Add</button>
+          </div>
+        </div>
         <div class="two">
           <label>Size<input name="dimensions" ${v(d.dimensions)} placeholder="e.g. 40 × 25 × 2 cm"></label>
           <label>Materials cost ($)<input name="cost" inputmode="decimal" ${v(d.cost)}></label>
@@ -504,6 +588,14 @@
       </div>
     </form>`;
   }
+
+  function materialChips(line, selected) {
+    const all = [...state.settings.materials[line]];
+    for (const m of selected) if (!hasItem(all, m)) all.push(m);
+    return all.map((m) => matChip(m, hasItem(selected, m))).join("");
+  }
+  const matChip = (m, on) =>
+    `<button type="button" class="mat${on ? " on" : ""}" data-action="toggleMat" data-v="${esc(m)}" aria-pressed="${on}">${esc(m)}</button>`;
 
   function sessionForm(p, i) {
     const t = p.sessions[i];
@@ -575,6 +667,12 @@
         </div>
         <p class="hint" id="storageInfo"></p>
       </fieldset>
+      ${Object.keys(LINES).map((line) => `<fieldset><legend>${esc(LINES[line].name)} materials</legend>
+        <p class="hint">Tap × to remove a choice from the list. Projects that already use it keep it.</p>
+        <div class="mats">${state.settings.materials[line].map((m) =>
+          `<button type="button" class="mat on" data-action="removeMat" data-line="${line}" data-v="${esc(m)}">${esc(m)} ×</button>`).join("")
+          || `<span class="muted small">No materials in the list.</span>`}</div>
+      </fieldset>`).join("")}
       <div class="actions"><button type="button" class="btn" data-action="close">Done</button></div>
     </form>`;
   }
@@ -618,7 +716,7 @@
     const cols = [["Workshop", (p) => LINES[p.line].name], ["Code", (p) => p.code], ["Name", (p) => p.name],
       ["Status", (p) => p.status], ["Purpose", (p) => p.purpose], ["Start date", (p) => p.start],
       ["Completion date", (p) => p.end], ["Hours", (p) => (totalMs(p) / 36e5).toFixed(2)],
-      ["Materials", (p) => p.materials], ["Size", (p) => p.dimensions], ["Materials cost", (p) => p.cost],
+      ["Materials", (p) => p.materials.join("; ")], ["Size", (p) => p.dimensions], ["Materials cost", (p) => p.cost],
       ["Asking price", (p) => p.sale.asking], ["Sold for", (p) => p.sale.price], ["Date sold", (p) => p.sale.date],
       ["Buyer", (p) => p.sale.buyer], ["Sold via", (p) => p.sale.where], ["Photos", (p) => p.photos.length],
       ["Videos", (p) => p.videos.length], ["Description", (p) => p.description], ["Notes", (p) => p.notes]];
@@ -683,7 +781,53 @@
       closeModal();
       render();
     },
-    addPhotos(el) { pendingMediaFor = el.dataset.id; $("#photoInput").click(); },
+    resetTimer(el) {
+      const p = pOf(el);
+      if (!confirm(`Reset the timer for ${p.code || p.name}? All ${fmtDur(totalMs(p))} of recorded time will be deleted.`)) return;
+      p.sessions = [];
+      p.updated = Date.now();
+      save();
+      render();
+      toast("Timer reset to zero");
+    },
+    toggleMat(el) {
+      const on = !el.classList.contains("on");
+      el.classList.toggle("on", on);
+      el.setAttribute("aria-pressed", on);
+    },
+    addMat() {
+      const input = $("#matNew"), f = input.form, v = input.value.trim().replace(/\s+/g, " ");
+      if (!v) return input.focus();
+      addMaterialOption(f.dataset.line, v);
+      save();
+      const box = f.querySelector(".mats");
+      let chip = [...box.querySelectorAll(".mat")].find((b) => b.dataset.v.toLowerCase() === v.toLowerCase());
+      if (!chip) {
+        box.insertAdjacentHTML("beforeend", matChip(v, true));
+        chip = box.lastElementChild;
+      }
+      chip.classList.add("on");
+      chip.setAttribute("aria-pressed", "true");
+      input.value = "";
+      toast(`${chip.dataset.v} selected`);
+    },
+    removeMat(el) {
+      const list = state.settings.materials[el.dataset.line];
+      const i = list.findIndex((x) => x === el.dataset.v);
+      if (i >= 0) list.splice(i, 1);
+      save();
+      el.remove();
+    },
+    addPhotos: (el) => openModal(`<div class="form">
+      <h2>Add photos</h2>
+      <button class="btn big block" data-action="camera" data-id="${esc(el.dataset.id)}">📷 Take photos</button>
+      <p class="hint">Keep snapping. Tap Done when you've finished.</p>
+      <button class="btn ghost big block" data-action="pickPhotos" data-id="${esc(el.dataset.id)}">🖼 Choose from library</button>
+      <div class="actions"><button class="btn ghost" data-action="close">Cancel</button></div>
+    </div>`),
+    pickPhotos(el) { closeModal(); pendingMediaFor = el.dataset.id; $("#photoInput").click(); },
+    camera: (el) => openCamera(pOf(el)),
+    snap,
     addVideos(el) { pendingMediaFor = el.dataset.id; $("#videoInput").click(); },
     photo: (el) => { const p = pOf(el); modal.innerHTML = ""; openModal(photoViewer(p, Number(el.dataset.i))); },
     cover(el) {
@@ -723,7 +867,7 @@
         && !confirm(`${code} is already used by another project. Save anyway?`)) return;
       const fields = {
         name, code, status: d.status, start: d.start, end: d.end, purpose: d.purpose.trim(),
-        description: d.description.trim(), materials: d.materials.trim(), dimensions: d.dimensions.trim(),
+        description: d.description.trim(), materials: [...f.querySelectorAll(".mat.on")].map((b) => b.dataset.v), dimensions: d.dimensions.trim(),
         cost: d.cost.trim(), notes: d.notes.trim(),
         sale: { asking: d.asking.trim(), price: d.price.trim(), date: d.soldDate, buyer: d.buyer.trim(),
           where: d.where.trim(), notes: d.saleNotes.trim() },
@@ -820,7 +964,22 @@
     if (t.name === "status" && DONE.includes(t.value) && !f.end.value) f.end.value = todayISO();
     if (t.name === "status" && t.value === "Sold" && !f.soldDate.value) f.soldDate.value = todayISO();
   });
-  modal.addEventListener("close", () => { modal.innerHTML = ""; });
+  document.addEventListener("toggle", (e) => {
+    if (e.target.matches && e.target.matches(".timer details")) ui.logOpen = e.target.open;
+  }, true);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && e.target.id === "matNew") { e.preventDefault(); actions.addMat(); }
+  });
+  modal.addEventListener("close", () => {
+    modal.innerHTML = "";
+    if (!cam) return;
+    cam.stream.getTracks().forEach((t) => t.stop());
+    const n = cam.count;
+    cam = null;
+    modal.classList.remove("full");
+    render();
+    if (n) toast(`Added ${n} photo${n > 1 ? "s" : ""}`);
+  });
   document.addEventListener("visibilitychange", () => { if (!document.hidden) tick(); });
 
   if (!history.state) history.replaceState({ d: 0 }, "", location.hash || "#/");

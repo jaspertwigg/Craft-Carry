@@ -16,10 +16,11 @@ It then opens like a normal app and works without internet.
 ## What each project records
 - Name, code (filled in automatically, but you can change it) and status (Idea, In progress, Finished, For sale, Sold, Gifted, Kept)
 - Start and completion dates
-- Description, purpose, materials, size and materials cost
-- Photos (the first one is the cover; tap a photo to make it the cover or delete it)
+- Description, purpose, size and materials cost
+- **Materials:** tap to pick from a list. Type in the box and tap **Add** to put a new material on the list. Remove materials from the list in ⚙︎ Settings.
+- Photos: **Take photos** opens the camera inside the app, so you can take several in a row and then tap **Done**. Or choose from your photo library. The first photo is the cover; tap a photo to make it the cover or delete it.
 - Videos
-- **Timer:** tap ▶ Start when you begin working and ■ Stop when you finish. It keeps counting even if you close the app. Open **Time log** to fix a session you forgot to stop, or to add time by hand.
+- **Timer:** tap ▶ Start when you begin working and ■ Stop when you finish. It keeps counting even if you close the app. Open **Time log** to fix a session you forgot to stop, delete an entry (×), add time by hand, or **Reset timer** back to zero.
 - Sale details: asking price, sold price, date, buyer and where it sold. If you enter a materials cost, the app works out your profit and what you earned per hour.
 
 ## Your data
