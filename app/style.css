@@ -374,3 +374,16 @@ dialog.full .modal-in { padding: 0; height: 100%; }
 }
 .form label > span[hidden] { display: none; }
 .pmats { color: var(--muted); }
+
+/* Long forms: a fixed header and Save bar with only the middle scrolling. iPhone Safari can draw
+   scrolling content over "sticky" bars, so these panels don't use sticky positioning at all. */
+dialog.sheet { overflow: hidden; }
+dialog.sheet[open] { display: flex; flex-direction: column; }
+dialog.sheet > .modal-in { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0; }
+dialog.sheet .modal-in > form, dialog.sheet .modal-in > form:last-child { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 0; margin: 0; }
+dialog.sheet .sheet-head { position: static; margin: 0; flex: none; }
+dialog.sheet .sheet-body {
+  flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); align-content: start; padding: 16px 18px 20px;
+}
+dialog.sheet .actions { position: static; margin: 0; flex: none; }

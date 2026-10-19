@@ -668,6 +668,8 @@
     lockPage();
     if (!modal.open) modal.showModal();
     modal.scrollTop = 0;
+    const body = modal.querySelector(".sheet-body");
+    if (body) body.scrollTop = 0;
     modal.querySelector(".modal-in").focus({ preventScroll: true });
     hydrate();
   }
@@ -699,6 +701,7 @@
     const v = (x) => `value="${esc(x || "")}"`;
     return `<form data-form="project" data-id="${isNew ? "" : esc(p.id)}" data-line="${line}" class="form" novalidate>
       ${sheetHead(isNew ? "New " + esc(LINES[line].name) + " project" : "Edit " + esc(d.code || "project"))}
+      <div class="sheet-body">
       <label>Name<input name="name" ${v(d.name)} placeholder="e.g. Jarrah cutting board" enterkeyhint="next"></label>
       <div class="two">
         <label>Code<input name="code" ${v(d.code)} data-auto="${isNew ? 1 : 0}" autocapitalize="characters"></label>
@@ -768,6 +771,7 @@
       </fieldset>
 
       <label>Other notes<textarea name="notes" rows="3">${esc(d.notes)}</textarea></label>
+      </div>
       <div class="actions">
         <button type="button" class="btn ghost" data-action="close">Cancel</button>
         <button class="btn">Save</button>
@@ -898,6 +902,7 @@
     const pre = state.settings.prefixes;
     return `<form data-form="settings" class="form">
       ${sheetHead("Settings")}
+      <div class="sheet-body">
       <fieldset><legend>Project codes</legend>
         <div class="two">
           <label>Wood Talking<input name="wood" value="${esc(pre.wood)}" autocapitalize="characters" required></label>
@@ -927,6 +932,7 @@
           `<button type="button" class="mat on" data-action="removeOpt" data-kind="${kind}" data-line="${line}" data-v="${esc(m)}">${esc(m)} ×</button>`).join("")
           || `<span class="muted small">Nothing in the list.</span>`}</div>
       </fieldset>`)).join("")}
+      </div>
       <div class="actions"><button type="button" class="btn" data-action="close">Done</button></div>
     </form>`;
   }
