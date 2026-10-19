@@ -769,12 +769,14 @@
   function refreshPick(field) {
     const input = field.querySelector(".opt-new"), add = field.querySelector("[data-action=addOpt]");
     const v = input.value.trim().replace(/\s+/g, " "), q = v.toLowerCase();
-    let exact = false;
+    let exact = false, shown = 0;
     for (const chip of field.querySelectorAll(".mat")) {
       const name = chip.dataset.v.toLowerCase();
       if (name === q) exact = true;
       chip.hidden = !(chip.classList.contains("on") || (q ? name.includes(q) : chip.classList.contains("top")));
+      if (!chip.hidden) shown++;
     }
+    field.querySelector(".mats").hidden = !shown;
     add.hidden = !v || exact;
     add.textContent = `＋ Add “${v}”`;
   }

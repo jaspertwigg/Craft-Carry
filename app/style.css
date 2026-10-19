@@ -232,7 +232,7 @@ dialog {
   padding: 0; border: 0; border-radius: 18px; background: var(--card); color: var(--ink);
   box-shadow: 0 10px 40px rgba(0, 0, 0, .35);
   /* Only ever scroll up and down, and never hand the swipe on to the page behind. */
-  overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain;
 }
 dialog::backdrop { background: rgba(20, 12, 6, .55); }
 .modal-in { padding: 18px 18px 0; outline: none; }
@@ -298,7 +298,6 @@ dialog::backdrop { background: rgba(20, 12, 6, .55); }
 .mat-field .label { font-size: .88rem; color: var(--muted); font-weight: 600; }
 .mat-field small { font-weight: 400; }
 .mats { display: flex; flex-wrap: wrap; gap: 6px; }
-.mats:not(:has(.mat:not([hidden]))) { display: none; }
 .mat[hidden] { display: none; }
 .mat {
   border: 1px solid var(--line); background: var(--field); color: var(--ink);
@@ -358,7 +357,7 @@ dialog.sheet > .modal-in { flex: 1; min-height: 0; display: flex; flex-direction
 dialog.sheet .modal-in > form, dialog.sheet .modal-in > form:last-child { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 0; margin: 0; }
 dialog.sheet .sheet-head { position: static; margin: 0; flex: none; }
 dialog.sheet .sheet-body {
-  flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain;
   display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); align-content: start; padding: 16px 18px 20px;
 }
 dialog.sheet .actions { position: static; margin: 0; flex: none; }
