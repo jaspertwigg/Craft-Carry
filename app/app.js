@@ -368,7 +368,7 @@
       : `<span class="thumb ph">${LINES[p.line].emoji}</span>`;
   }
   function card(p) {
-    const done = p.datesUnknown ? "Date unknown" : p.end ? fmtDate(p.end) : "";
+    const done = !p.datesUnknown && p.end ? fmtDate(p.end) : "";
     return `<button class="pcard" data-action="go" data-to="#/p/${esc(p.id)}">
       ${thumb(p)}
       <span class="pbody">
@@ -445,7 +445,6 @@
       const L = LINES[p.line];
       const row = (label, val) => (val ? `<dt>${label}</dt><dd>${val}</dd>` : "");
       const price = num(p.sale.price), cost = num(p.cost), hours = p.timeUnknown ? 0 : ms / 36e5;
-      const unknownClock = p.timeUnknown && !run && !ms;
       const profit = price != null ? price - (cost || 0) : null;
       const sessions = p.sessions.map((t, i) => ({ ...t, i })).sort((a, b) => b.start - a.start);
       const sale = p.sale;
@@ -462,12 +461,11 @@
           </div>
         </section>
 
-        <section class="card timer${run ? " on" : ""}">
+        ${p.timeUnknown && !run ? "" : `<section class="card timer${run ? " on" : ""}">
           <div class="timer-top">
             <div>
-              ${unknownClock ? `<div class="clock big unknown">Unknown</div>` : `<div class="clock big" data-timer="${esc(p.id)}">${fmtClock(ms)}</div>`}
+              <div class="clock big" data-timer="${esc(p.id)}">${fmtClock(ms)}</div>
               <div class="muted small">${run ? "Timing since " + fmtTime(run.start)
-                : p.timeUnknown ? (ms ? "Full time taken unknown · this much recorded" : "Time taken unknown")
                 : `Total time · ${p.sessions.length} session${p.sessions.length === 1 ? "" : "s"}`}</div>
             </div>
             <button class="btn timer-btn${run ? " stop" : ""}" data-action="timer" data-id="${esc(p.id)}">${run ? "■ Stop" : "▶ Start"}</button>
@@ -485,16 +483,16 @@
               ${p.sessions.length ? `<button class="btn ghost small danger" data-action="resetTimer" data-id="${esc(p.id)}">↺ Reset timer</button>` : ""}
             </div>
           </details>
-        </section>
+        </section>`}
 
         <section class="card">
           <h3>Details</h3>
           <dl>
             ${row("Code", esc(p.code))}
-            ${p.datesUnknown ? row("Dates", "Unknown") : `${row("Started", fmtDate(p.start))}
+            ${p.datesUnknown ? "" : `${row("Started", fmtDate(p.start))}
             ${row("Completed", fmtDate(p.end))}
             ${row("Days start→finish", p.start && p.end ? String(daysBetween(p.start, p.end) + 1) : "")}`}
-            ${row("Time spent", p.timeUnknown ? "Unknown" + (ms ? ` (${fmtDur(ms)} recorded)` : "") : ms ? fmtDur(ms) : "")}
+            ${p.timeUnknown ? "" : row("Time spent", ms ? fmtDur(ms) : "")}
             ${row("Purpose", esc(p.purpose))}
             ${row("Materials", esc(p.materials.join(", ")))}
             ${row("Finish", esc(p.finishes.join(", ")))}

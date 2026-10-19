@@ -323,7 +323,6 @@ dialog::backdrop { background: rgba(20, 12, 6, .55); }
 
 .unknowns { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: -4px; }
 .form input[type="date"]:disabled { opacity: .45; }
-.clock.unknown { color: var(--muted); }
 .icon-btn svg { display: block; margin: auto; }
 [hidden] { display: none !important; }
 
