@@ -18,9 +18,9 @@ It then opens like a normal app and works without internet.
 - Start and completion dates (tick **Dates unknown** for older pieces; there's also **Time taken unknown**)
 - Description, purpose, size and materials cost
 - **Materials** and **Finish** (beeswax, CA glue, Danish oil…): your 5 most recently used choices are shown; tap to pick. Type in the search box to find any other choice, or tap **＋ Add** to put a new one on the list. Remove choices from the lists in ⚙︎ Settings.
-- Photos and videos: in the project form or on the project page, **📷 Camera** / **🎥 Record** opens the camera and **＋ Add photo** / **＋ Add video** opens your phone's picker (on iPhone, choose Photo Library from Apple's menu). The in-app camera lets you take several photos in a row, then tap **Done**. The first photo is the cover.
+- Photos and videos: tap **＋ Add photo** / **＋ Add video** in the project form or on the project page. On iPhone, Apple's menu then lets you choose **Photo Library** or **Take Photo**. The first photo is the cover.
 - **Fields follow the status:** For sale shows the asking price and where it's listed; Sold shows the full sale details; Gifted shows who it was for, the date and occasion; Kept shows where it lives. The completion date appears once a piece is finished.
-- **Camera roll:** photos and videos taken in the app are offered to your camera roll. On iPhone, tap **Save Images** / **Save Video** in the menu that pops up. On Android they go to the Downloads album. Turn this off in ⚙︎ Settings. Any photo or video can also be saved later with **Save to camera roll**.
+- **Save to camera roll:** open any photo, or look under any video, and tap **Save to camera roll**. On iPhone, tap **Save Image** / **Save Video** in the menu that pops up.
 - **Timer:** tap ▶ Start when you begin working and ■ Stop when you finish. It keeps counting even if you close the app. Open **Time log** to fix a session you forgot to stop, delete an entry (×), add time by hand, or **Reset timer** back to zero.
 - Sale details: if you enter a materials cost, the app works out your profit and what you earned per hour.
 

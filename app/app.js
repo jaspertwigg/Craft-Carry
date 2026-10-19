@@ -30,7 +30,7 @@
   const PURPOSES = ["For sale", "Commission", "Gift", "Personal use", "Practice / prototype", "Market stock"];
 
   const $ = (s, r = document) => r.querySelector(s);
-  const view = $("#view"), modal = $("#modal"), pop = $("#pop"), toastEl = $("#toast");
+  const view = $("#view"), modal = $("#modal"), toastEl = $("#toast");
   const ui = { q: "", status: "All", logOpen: false };
   let pendingMediaFor = null;
 
@@ -95,7 +95,7 @@
 
   // ---------- state ----------
   function blank() {
-    const settings = { prefixes: { ...DEFAULT_PREFIX }, saveToRoll: true, schema: 2, used: {} };
+    const settings = { prefixes: { ...DEFAULT_PREFIX }, schema: 2, used: {} };
     for (const [kind, pk] of Object.entries(PICKS)) {
       settings[kind] = { wood: [...pk.defaults.wood], leather: [...pk.defaults.leather] };
       settings.used[kind] = { wood: {}, leather: {} };
@@ -114,7 +114,6 @@
     for (const k of Object.keys(DEFAULT_PREFIX)) {
       if (typeof pre[k] === "string" && pre[k].trim()) out.settings.prefixes[k] = pre[k].trim().toUpperCase();
     }
-    out.settings.saveToRoll = !(s.settings && s.settings.saveToRoll === false);
     for (const kind of Object.keys(PICKS)) {
       const saved = (s.settings && s.settings[kind]) || {};
       for (const k of Object.keys(LINES)) {
@@ -331,66 +330,6 @@
     save();
     forgetURL(id);
     await media.del(id).catch(() => {});
-  }
-  // In-app camera: keeps the viewfinder open so several photos can be taken in a row.
-  let cam = null;
-  async function openCamera(p) {
-    let stream;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: false,
-        video: { facingMode: { ideal: "environment" }, width: { ideal: 3264 }, height: { ideal: 2448 } } });
-    } catch {
-      return toast("Camera not available. Allow camera access, or use Choose from library.");
-    }
-    cam = { stream, p, count: 0, files: [] };
-    openPop(`<div class="camera">
-      <video id="camVideo" autoplay playsinline muted></video>
-      <div class="cam-strip" id="camStrip"></div>
-      <div class="cam-bar">
-        <span></span>
-        <button class="shutter" data-action="snap" aria-label="Take photo"></button>
-        <button class="btn cam-done" data-action="camDone">Done <span id="camCount"></span></button>
-      </div>
-    </div>`, true);
-    $("#camVideo").srcObject = stream;
-  }
-  async function snap() {
-    const v = $("#camVideo");
-    if (!cam || !v || !v.videoWidth) return;
-    const scale = Math.min(1, 2000 / Math.max(v.videoWidth, v.videoHeight));
-    const c = document.createElement("canvas");
-    c.width = Math.round(v.videoWidth * scale);
-    c.height = Math.round(v.videoHeight * scale);
-    c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
-    v.classList.remove("flash");
-    void v.offsetWidth;
-    v.classList.add("flash");
-    const blob = await new Promise((r) => c.toBlob(r, "image/jpeg", 0.85));
-    if (!blob || !cam) return;
-    const id = uid(), p = cam.p;
-    try {
-      await media.put({ id, kind: "photo", type: "image/jpeg", name: `photo-${Date.now()}.jpg`, blob, created: Date.now() });
-    } catch {
-      return toast("Couldn't save the photo. Storage may be full");
-    }
-    p.photos.push(id);
-    if (p === draft) draft.added.push(id);
-    else { p.updated = Date.now(); save(); }
-    cam.count++;
-    cam.files.push(fileFor(blob, p, p.photos.length));
-    urls.set(id, URL.createObjectURL(blob));
-    blobs.set(id, blob);
-    $("#camStrip").insertAdjacentHTML("afterbegin", `<img alt="" src="${urls.get(id)}">`);
-    $("#camCount").textContent = `(${cam.count})`;
-  }
-
-  let recording = false;
-  function openVideoInput(id, record) {
-    const input = $("#videoInput");
-    pendingMediaFor = id;
-    recording = record;
-    if (record) input.setAttribute("capture", "environment"); else input.removeAttribute("capture");
-    input.click();
   }
 
   const blobToDataURL = (blob) => new Promise((res, rej) => {
@@ -683,13 +622,6 @@
     if (draft && draft.added.length && !confirm(`Discard the ${draft.added.length} photo/video${draft.added.length > 1 ? "s" : ""} you added?`)) return;
     closeModal();
   }
-  // A second dialog that opens on top of the first (camera, quick prompts).
-  function openPop(html, full = false) {
-    pop.classList.toggle("full", full);
-    pop.innerHTML = `<div class="modal-in" tabindex="-1" autofocus>${html}</div>`;
-    if (!pop.open) pop.showModal();
-  }
-  function closePop() { if (pop.open) pop.close(); }
 
   const DONE_FOR = DONE.join("|");
   function projectForm(p, line) {
@@ -784,16 +716,14 @@
     for (const el of f.querySelectorAll("[data-for]")) el.hidden = !el.dataset.for.split("|").includes(st);
   }
   function openProjectForm(p, line) {
-    draft = { code: p ? p.code : "", photos: p ? [...p.photos] : [], videos: p ? [...p.videos] : [], added: [], removed: [] };
+    draft = { photos: p ? [...p.photos] : [], videos: p ? [...p.videos] : [], added: [], removed: [] };
     openModal(projectForm(p, line), { sheet: true });
     applyStatus(modal.querySelector("form"));
   }
   function mediaBtns(id, kind) {
     return `<div class="media-btns">${kind === "photo"
-      ? `<button type="button" class="btn small" data-action="camera" data-id="${esc(id)}">📷 Camera</button>
-        <button type="button" class="btn small ghost" data-action="pickPhotos" data-id="${esc(id)}">＋ Add photo</button>`
-      : `<button type="button" class="btn small" data-action="recordVideo" data-id="${esc(id)}">🎥 Record</button>
-        <button type="button" class="btn small ghost" data-action="pickVideos" data-id="${esc(id)}">＋ Add video</button>`}</div>`;
+      ? `<button type="button" class="btn small" data-action="pickPhotos" data-id="${esc(id)}">＋ Add photo</button>`
+      : `<button type="button" class="btn small" data-action="pickVideos" data-id="${esc(id)}">＋ Add video</button>`}</div>`;
   }
   function draftMediaHTML(kind) {
     const list = kind === "photo" ? draft.photos : draft.videos;
@@ -911,10 +841,6 @@
         <p class="hint">Codes are prefix + 2-digit year + item number, e.g. ${esc(pre.wood)}2601. Changing a prefix only affects new projects.</p>
         <button class="btn small">Save codes</button>
       </fieldset>
-      <fieldset><legend>Camera roll</legend>
-        <label class="check"><input type="checkbox" id="saveToRollSetting"${state.settings.saveToRoll ? " checked" : ""}> Save photos and videos I take in the app to my camera roll</label>
-        <p class="hint">On iPhone, tap <b>Save Images</b> / <b>Save Video</b> in the menu that pops up. Photos picked from your library aren't saved again.</p>
-      </fieldset>
       <fieldset><legend>Backup</legend>
         <p class="hint">Everything is stored only on this device. Download a backup now and then so nothing is lost if the phone is replaced.</p>
         <label class="check"><input type="checkbox" id="withVideos"> Include videos (the file can get very large)</label>
@@ -995,7 +921,7 @@
   const actions = {
     go: (el) => navigate(el.dataset.to),
     back: goBack,
-    close: (el) => (el.closest("dialog") === pop ? closePop() : cancelModal()),
+    close: cancelModal,
     settings() {
       openModal(settingsHTML(), { sheet: true });
       if (navigator.storage && navigator.storage.estimate) {
@@ -1087,17 +1013,7 @@
       el.remove();
     },
     pickPhotos(el) { pendingMediaFor = el.dataset.id; $("#photoInput").click(); },
-    camDone() {
-      if (cam && state.settings.saveToRoll) saveToRoll(cam.files);
-      closePop();
-    },
-    recordVideo: (el) => openVideoInput(el.dataset.id, true),
-    pickVideos: (el) => openVideoInput(el.dataset.id, false),
-    saveRecorded() {
-      saveToRoll(ui.toSave || []);
-      ui.toSave = null;
-      closePop();
-    },
+    pickVideos(el) { pendingMediaFor = el.dataset.id; $("#videoInput").click(); },
     async draftRemove(el) {
       const kind = el.dataset.kind, id = el.dataset.m, list = kind === "photo" ? draft.photos : draft.videos;
       if (!confirm(`Remove this ${kind}?`)) return;
@@ -1113,12 +1029,6 @@
       const list = p.photos.includes(id) ? p.photos : p.videos;
       saveToRoll([fileFor(blob, p, list.indexOf(id) + 1)]);
     },
-    camera(el) {
-      const t = targetOf(el.dataset.id);
-      if (t === draft) draft.code = (modal.querySelector("[name=code]") || {}).value || "";
-      openCamera(t);
-    },
-    snap,
     photo: (el) => { const p = pOf(el); modal.innerHTML = ""; openModal(photoViewer(p, Number(el.dataset.i))); },
     cover(el) {
       const p = pOf(el), i = Number(el.dataset.i);
@@ -1227,7 +1137,6 @@
   // ---------- events ----------
   document.addEventListener("click", (e) => {
     if (e.target === modal) return cancelModal();
-    if (e.target === pop && !cam) return closePop();
     const el = e.target.closest("[data-action]");
     if (!el || el.matches("input, select, textarea")) return;
     const fn = actions[el.dataset.action];
@@ -1252,28 +1161,8 @@
     if (t.id === "photoInput" || t.id === "videoInput") {
       const files = [...t.files];
       t.value = "";
-      const p = targetOf(pendingMediaFor), recorded = t.id === "videoInput" && recording;
-      if (p === draft) draft.code = (modal.querySelector("[name=code]") || {}).value || "";
-      recording = false;
-      addMedia(p, files, t.id === "photoInput" ? "photo" : "video").then(() => {
-        // The share menu needs a fresh tap, so ask rather than open it here.
-        if (!recorded || !files.length || !state.settings.saveToRoll || !p) return;
-        ui.toSave = files.map((f, i) => fileFor(f, p, p.videos.length - files.length + i + 1));
-        openPop(`<div class="form">
-          <h2>Video added</h2>
-          <p>Save a copy to your camera roll too?</p>
-          <div class="actions">
-            <button class="btn ghost" data-action="close">Not now</button>
-            <button class="btn" data-action="saveRecorded">Save to camera roll</button>
-          </div>
-        </div>`);
-      });
+      addMedia(targetOf(pendingMediaFor), files, t.id === "photoInput" ? "photo" : "video");
       return;
-    }
-    if (t.id === "saveToRollSetting") {
-      state.settings.saveToRoll = t.checked;
-      save();
-      return toast(t.checked ? "Will save to camera roll" : "Won't save to camera roll");
     }
     if (t.id === "importInput") {
       const file = t.files[0];
@@ -1312,16 +1201,6 @@
     modal.innerHTML = "";
     unlockPage();
     discardDraft();
-  });
-  pop.addEventListener("close", () => {
-    pop.innerHTML = "";
-    pop.classList.remove("full");
-    if (!cam) return;
-    cam.stream.getTracks().forEach((t) => t.stop());
-    const n = cam.count, target = cam.p;
-    cam = null;
-    if (target === draft) renderDraftMedia(); else render();
-    if (n) toast(`Added ${n} photo${n > 1 ? "s" : ""}`);
   });
   document.addEventListener("visibilitychange", () => { if (!document.hidden) tick(); });
 
