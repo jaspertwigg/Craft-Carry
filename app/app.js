@@ -429,14 +429,13 @@
       : `<span class="thumb ph">${LINES[p.line].emoji}</span>`;
   }
   function card(p) {
-    const done = p.datesUnknown ? "Date unknown" : p.end ? "Completed " + fmtDate(p.end) : "";
+    const done = p.datesUnknown ? "Date unknown" : p.end ? fmtDate(p.end) : "";
     return `<button class="pcard" data-action="go" data-to="#/p/${esc(p.id)}">
       ${thumb(p)}
       <span class="pbody">
         <span class="prow"><span class="code">${esc(p.code || "No code")}</span>${statusPill(p.status)}</span>
-        <span class="pname">${esc(p.name)}</span>
+        <span class="pname">${esc(p.name)}${p.materials.length ? `<span class="pmats"> | ${esc(p.materials.join(", "))}</span>` : ""}</span>
         ${done ? `<span class="pmeta">${done}</span>` : ""}
-        ${p.materials.length ? `<span class="pmeta pmats">${esc(p.materials.join(", "))}</span>` : ""}
       </span>
     </button>`;
   }

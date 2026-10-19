@@ -373,4 +373,4 @@ dialog.full .modal-in { padding: 0; height: 100%; }
   background: rgba(0, 0, 0, .6); color: #fff; font-size: .7rem;
 }
 .form label > span[hidden] { display: none; }
-.pmats { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pmats { color: var(--muted); }
