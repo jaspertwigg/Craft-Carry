@@ -387,3 +387,4 @@ dialog.sheet .sheet-body {
   display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); align-content: start; padding: 16px 18px 20px;
 }
 dialog.sheet .actions { position: static; margin: 0; flex: none; }
+.hero-img.ph .btn.ghost { background: var(--card); }

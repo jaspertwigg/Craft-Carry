@@ -791,9 +791,9 @@
   function mediaBtns(id, kind) {
     return `<div class="media-btns">${kind === "photo"
       ? `<button type="button" class="btn small" data-action="camera" data-id="${esc(id)}">📷 Camera</button>
-        <button type="button" class="btn small ghost" data-action="pickPhotos" data-id="${esc(id)}">🖼 Library</button>`
+        <button type="button" class="btn small ghost" data-action="pickPhotos" data-id="${esc(id)}">＋ Add photo</button>`
       : `<button type="button" class="btn small" data-action="recordVideo" data-id="${esc(id)}">🎥 Record</button>
-        <button type="button" class="btn small ghost" data-action="pickVideos" data-id="${esc(id)}">🖼 Library</button>`}</div>`;
+        <button type="button" class="btn small ghost" data-action="pickVideos" data-id="${esc(id)}">＋ Add video</button>`}</div>`;
   }
   function draftMediaHTML(kind) {
     const list = kind === "photo" ? draft.photos : draft.videos;
