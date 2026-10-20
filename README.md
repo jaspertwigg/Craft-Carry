@@ -31,7 +31,7 @@ Each workshop's list has a search box, status filters and a **Sort** menu: newes
 Everything is stored **only on your phone**. Nothing is uploaded anywhere.
 Use **⚙︎ Settings → Download backup** now and then (and before changing phones). Restore it with **Restore from backup**.
 Videos are left out of backups unless you tick the box, because they make the file very large.
-Settings also has a **spreadsheet (CSV)** download of all projects, and lets you change the `WT` / `CC` code prefixes.
+Settings also has a **spreadsheet (CSV)** download of all projects, lets you change the `WT` / `CC` code prefixes, and has **Renumber codes by completion date** (each year counts from 01 in the order pieces were finished; you see every change before it's applied).
 
 ## For developers
 Plain HTML, CSS and JavaScript with no build step. The `app/` folder is published to GitHub Pages by `.github/workflows/deploy.yml` on every push to `main`.

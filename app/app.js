@@ -859,6 +859,8 @@
         </div>
         <p class="hint">Codes are prefix + 2-digit year + item number, e.g. ${esc(pre.wood)}2601. Changing a prefix only affects new projects.</p>
         <button class="btn small">Save codes</button>
+        <p class="hint">Renumber every project so each year's codes run in the order pieces were completed (the first piece finished in 2026 becomes ${esc(pre.wood)}2601). You'll see the changes before anything is saved.</p>
+        <button type="button" class="btn small ghost" data-action="renumber">Renumber codes by completion date…</button>
       </fieldset>
       <fieldset><legend>Backup</legend>
         <p class="hint">Everything is stored only on this device. Download a backup now and then so nothing is lost if the phone is replaced.</p>
@@ -880,6 +882,47 @@
       </div>
       <div class="actions"><button type="button" class="btn" data-action="close">Done</button></div>
     </form>`;
+  }
+
+  // ---------- renumbering ----------
+  // Each workshop and year counts up from 01: finished pieces in completion order, then unfinished ones
+  // by start date, then undated ones (which keep the year from their current code).
+  function renumberPlan() {
+    const changes = [];
+    for (const line of Object.keys(LINES)) {
+      const prefix = state.settings.prefixes[line], years = new Map();
+      for (const p of ofLine(line)) {
+        const date = !p.datesUnknown && (p.end || p.start);
+        const m = p.code.match(/(\d{2})\d{2,}$/);
+        const year = date ? Number(date.slice(0, 4)) : m ? 2000 + Number(m[1]) : new Date(p.created).getFullYear();
+        const rank = date ? (p.end ? 0 : 1) : 2;
+        if (!years.has(year)) years.set(year, []);
+        years.get(year).push({ p, rank, key: date || "" });
+      }
+      for (const [year, list] of years) {
+        list.sort((a, b) => a.rank - b.rank || a.key.localeCompare(b.key) || byText(a.p.code, b.p.code) || a.p.created - b.p.created);
+        list.forEach(({ p }, i) => {
+          const code = prefix + String(year).slice(-2) + pad(i + 1);
+          if (code !== p.code) changes.push({ p, from: p.code, to: code });
+        });
+      }
+    }
+    return changes;
+  }
+  function renumberHTML(changes) {
+    return `<div class="form">
+      ${sheetHead("Renumber codes")}
+      <div class="sheet-body">
+        ${changes.length ? `<p>${changes.length} project code${changes.length > 1 ? "s" : ""} will change:</p>
+          <ul class="renumber">${changes.map((c) => `<li><span class="code">${esc(c.from || "none")}</span> → <span class="code">${esc(c.to)}</span> <span class="muted">${esc(c.p.name)}</span></li>`).join("")}</ul>
+          <p class="hint">If you've already written codes on any pieces, check this list first. Downloading a backup beforehand lets you undo it.</p>`
+          : `<p>All codes are already in completion order. Nothing to change.</p>`}
+      </div>
+      <div class="actions">
+        <button type="button" class="btn ghost" data-action="settings">Back</button>
+        ${changes.length ? `<button type="button" class="btn" data-action="applyRenumber">Renumber</button>` : ""}
+      </div>
+    </div>`;
   }
 
   // ---------- backup ----------
@@ -1072,6 +1115,15 @@
     exportBackup: () => exportBackup($("#withVideos").checked).catch(() => toast("Backup failed")),
     importBackup: () => $("#importInput").click(),
     exportCSV,
+    renumber: () => openModal(renumberHTML(renumberPlan()), { sheet: true }),
+    applyRenumber() {
+      const changes = renumberPlan();
+      for (const c of changes) { c.p.code = c.to; c.p.updated = Date.now(); }
+      save();
+      closeModal();
+      render();
+      toast(`Renumbered ${changes.length} project${changes.length > 1 ? "s" : ""}`);
+    },
   };
 
   // ---------- forms ----------

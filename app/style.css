@@ -368,3 +368,8 @@ dialog.sheet .sheet-body {
 }
 dialog.sheet .actions { position: static; margin: 0; flex: none; }
 .hero-img.ph .btn.ghost { background: var(--card); }
+
+.renumber { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.renumber li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.renumber .muted { flex-basis: 100%; font-size: .88rem; }
+dialog.sheet .modal-in > div.form { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 0; }
