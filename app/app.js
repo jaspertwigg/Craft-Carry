@@ -95,7 +95,7 @@
 
   // ---------- state ----------
   function blank() {
-    const settings = { prefixes: { ...DEFAULT_PREFIX }, schema: 2, used: {} };
+    const settings = { prefixes: { ...DEFAULT_PREFIX }, schema: 2, used: {}, sort: "added" };
     for (const [kind, pk] of Object.entries(PICKS)) {
       settings[kind] = { wood: [...pk.defaults.wood], leather: [...pk.defaults.leather] };
       settings.used[kind] = { wood: {}, leather: {} };
@@ -114,6 +114,7 @@
     for (const k of Object.keys(DEFAULT_PREFIX)) {
       if (typeof pre[k] === "string" && pre[k].trim()) out.settings.prefixes[k] = pre[k].trim().toUpperCase();
     }
+    if (s.settings && typeof s.settings.sort === "string") out.settings.sort = s.settings.sort;
     for (const kind of Object.keys(PICKS)) {
       const saved = (s.settings && s.settings[kind]) || {};
       for (const k of Object.keys(LINES)) {
@@ -432,7 +433,11 @@
           <div><b>${s.sold ? money(s.revenue).replace(/\.00$/, "") : "—"}</b><span>${s.sold} sold</span></div>
         </section>
         <button class="btn block big" data-action="newProject" data-line="${line}">＋ New ${esc(LINES[line].name)} project</button>
-        ${list.length ? `<input id="search" type="search" placeholder="Search name, code, materials, finish…" value="${esc(ui.q)}" autocomplete="off">
+        ${list.length ? `<div class="list-tools">
+            <input id="search" type="search" placeholder="Search…" value="${esc(ui.q)}" autocomplete="off">
+            <label class="sort"><select id="sortBy" aria-label="Sort by">${Object.entries(SORTS).map(([k, o]) =>
+              `<option value="${k}"${state.settings.sort === k ? " selected" : ""}>${o.label}</option>`).join("")}</select></label>
+          </div>
           <div class="chips">${["All", ...present].map((st) =>
             `<button class="chip${ui.status === st ? " on" : ""}" data-action="filter" data-status="${esc(st)}">${esc(st)}</button>`).join("")}</div>
           <div id="list" class="list">${listHTML(line)}</div>`
@@ -559,13 +564,27 @@
     },
   };
 
+  // Ways to order a workshop's list. Ties fall back to newest added first.
+  const byText = (x, y) => x.localeCompare(y, "en", { numeric: true, sensitivity: "base" });
+  const blankLast = (x, y, cmp) => (!x && !y ? 0 : !x ? 1 : !y ? -1 : cmp(x, y));
+  const SORTS = {
+    added: { label: "Newest added", by: (a, b) => b.created - a.created },
+    codeDesc: { label: "Code (newest)", by: (a, b) => blankLast(a.code, b.code, (x, y) => byText(y, x)) },
+    codeAsc: { label: "Code (oldest)", by: (a, b) => blankLast(a.code, b.code, byText) },
+    doneDesc: { label: "Completed (newest)", by: (a, b) => blankLast(a.datesUnknown ? "" : a.end, b.datesUnknown ? "" : b.end, (x, y) => byText(y, x)) },
+    doneAsc: { label: "Completed (oldest)", by: (a, b) => blankLast(a.datesUnknown ? "" : a.end, b.datesUnknown ? "" : b.end, byText) },
+    name: { label: "Name A–Z", by: (a, b) => byText(a.name, b.name) },
+    material: { label: "Material A–Z", by: (a, b) => blankLast(a.materials[0], b.materials[0], byText) },
+    status: { label: "Status", by: (a, b) => STATUSES.indexOf(a.status) - STATUSES.indexOf(b.status) },
+    updated: { label: "Recently updated", by: (a, b) => b.updated - a.updated },
+  };
   function listHTML(line) {
     const q = ui.q.trim().toLowerCase();
     const list = ofLine(line)
       .filter((p) => ui.status === "All" || p.status === ui.status)
       .filter((p) => !q || [p.name, p.code, p.materials.join(" "), p.finishes.join(" "), p.description, p.purpose, p.sale.buyer, p.gift.to, p.gift.occasion, p.notes]
         .some((v) => v.toLowerCase().includes(q)))
-      .sort((a, b) => b.created - a.created);
+      .sort((a, b) => (SORTS[state.settings.sort] || SORTS.added).by(a, b) || b.created - a.created);
     return list.length ? list.map(card).join("") : `<p class="empty">No matching projects.</p>`;
   }
 
@@ -1162,6 +1181,13 @@
       const files = [...t.files];
       t.value = "";
       addMedia(targetOf(pendingMediaFor), files, t.id === "photoInput" ? "photo" : "video");
+      return;
+    }
+    if (t.id === "sortBy") {
+      state.settings.sort = t.value;
+      save();
+      const r = route(), list = $("#list");
+      if (list && r.name === "line") { list.innerHTML = listHTML(r.line); hydrate(); }
       return;
     }
     if (t.id === "importInput") {

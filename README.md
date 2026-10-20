@@ -24,6 +24,9 @@ It then opens like a normal app and works without internet.
 - **Timer:** tap ▶ Start when you begin working and ■ Stop when you finish. It keeps counting even if you close the app. Open **Time log** to fix a session you forgot to stop, delete an entry (×), add time by hand, or **Reset timer** back to zero.
 - Sale details: if you enter a materials cost, the app works out your profit and what you earned per hour.
 
+## Finding projects
+Each workshop's list has a search box, status filters and a **Sort** menu: newest added, code (newest or oldest), completed date (newest or oldest), name, material, status or recently updated. The app remembers your choice.
+
 ## Your data
 Everything is stored **only on your phone**. Nothing is uploaded anywhere.
 Use **⚙︎ Settings → Download backup** now and then (and before changing phones). Restore it with **Restore from backup**.
