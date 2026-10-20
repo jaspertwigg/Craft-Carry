@@ -161,6 +161,15 @@
     }
   }
   const pickList = (v) => (Array.isArray(v) ? v : str(v).split(/[,;]/)).map((m) => str(m).trim()).filter(Boolean);
+  // Video "trims" are start/end points (seconds) the app plays between; the file itself is unchanged.
+  function normTrims(t, videos) {
+    const out = {};
+    for (const id of videos) {
+      const v = t && t[id];
+      if (v && Number.isFinite(v.start) && Number.isFinite(v.end) && v.end > v.start) out[id] = { start: v.start, end: v.end };
+    }
+    return out;
+  }
   function normProject(x) {
     const sale = x.sale || {}, gift = x.gift || {}, kept = x.kept || {};
     const ids = (a) => (Array.isArray(a) ? a.filter((v) => typeof v === "string") : []);
@@ -174,7 +183,7 @@
         where: str(sale.where), notes: str(sale.notes) },
       gift: { to: str(gift.to), date: str(gift.date), occasion: str(gift.occasion), notes: str(gift.notes) },
       kept: { where: str(kept.where), notes: str(kept.notes) },
-      photos: ids(x.photos), videos: ids(x.videos),
+      photos: ids(x.photos), videos: ids(x.videos), trims: normTrims(x.trims, ids(x.videos)),
       sessions: (Array.isArray(x.sessions) ? x.sessions : [])
         .filter((t) => t && Number.isFinite(t.start))
         .map((t) => ({ start: t.start, end: Number.isFinite(t.end) ? t.end : null, manual: !!t.manual })),
@@ -327,6 +336,7 @@
     const i = list.indexOf(id);
     if (i < 0) return;
     list.splice(i, 1);
+    delete p.trims[id];
     p.updated = Date.now();
     save();
     forgetURL(id);
@@ -518,13 +528,15 @@
 
         <section class="card">
           <div class="card-head"><h3>Videos <span class="muted">${p.videos.length || ""}</span></h3>${mediaBtns(p.id, "video")}</div>
-          ${p.videos.length ? p.videos.map((m) => `<div class="vid">
-              <video controls playsinline preload="metadata" ${mediaAttr(m)}></video>
+          ${p.videos.length ? p.videos.map((m) => { const tr = p.trims[m]; return `<div class="vid">
+              <video controls playsinline preload="metadata" ${mediaAttr(m)}${tr ? ` data-start="${tr.start}" data-end="${tr.end}"` : ""}></video>
+              ${tr ? `<p class="muted small">Trimmed to ${fmtSecs(tr.start)}–${fmtSecs(tr.end)}</p>` : ""}
               <div class="vid-tools">
+                <button class="link small" data-action="trimVideo" data-id="${esc(p.id)}" data-m="${esc(m)}">✂︎ Trim</button>
                 <button class="link small" data-action="saveOne" data-id="${esc(p.id)}" data-m="${esc(m)}">⬇ Save to camera roll</button>
-                <button class="link danger small" data-action="delVideo" data-id="${esc(p.id)}" data-m="${esc(m)}">Remove video</button>
+                <button class="link danger small" data-action="delVideo" data-id="${esc(p.id)}" data-m="${esc(m)}">Remove</button>
               </div>
-            </div>`).join("") : `<p class="muted small">No videos yet.</p>`}
+            </div>`; }).join("") : `<p class="muted small">No videos yet.</p>`}
         </section>
 
         ${p.status === "Gifted" || Object.values(p.gift).some(Boolean) ? `<section class="card">
@@ -842,10 +854,191 @@
         <button class="btn ghost danger" data-action="delPhoto" data-id="${esc(p.id)}" data-i="${i}">Delete</button>
         ${i > 0 ? `<button class="btn ghost" data-action="cover" data-id="${esc(p.id)}" data-i="${i}">Make cover</button>` : ""}
         <button class="btn ghost" data-action="saveOne" data-id="${esc(p.id)}" data-m="${esc(p.photos[i])}">Save to camera roll</button>
+        <button class="btn ghost" data-action="editPhoto" data-id="${esc(p.id)}" data-i="${i}">✂︎ Edit</button>
         <button class="btn" data-action="close">Close</button>
       </div>
     </div>`;
   }
+
+  // ---------- photo editor (rotate + crop) & video trim ----------
+  const fmtSecs = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, "0")}`;
+  const RATIOS = { free: ["Free", 0], square: ["Square", 1], land: ["4:3", 4 / 3], port: ["3:4", 3 / 4] };
+  let ed = null; // { p, i, id, img, rot, crop: {x,y,w,h} as fractions of the rotated image, ratio }
+  const edSize = () => (ed.rot % 2 ? [ed.img.naturalHeight, ed.img.naturalWidth] : [ed.img.naturalWidth, ed.img.naturalHeight]);
+  function drawRotated(ctx, scale) {
+    const [W, H] = edSize(), iw = ed.img.naturalWidth, ih = ed.img.naturalHeight;
+    ctx.save();
+    ctx.scale(scale, scale);
+    ctx.translate(W / 2, H / 2);
+    ctx.rotate((ed.rot * Math.PI) / 2);
+    ctx.drawImage(ed.img, -iw / 2, -ih / 2);
+    ctx.restore();
+  }
+  // Largest centred box of the chosen shape (or the whole photo for Free).
+  function fitCrop() {
+    const [W, H] = edSize(), r = RATIOS[ed.ratio][1];
+    if (!r) return (ed.crop = { x: 0, y: 0, w: 1, h: 1 });
+    let w = W, h = W / r;
+    if (h > H) { h = H; w = H * r; }
+    ed.crop = { x: (1 - w / W) / 2, y: (1 - h / H) / 2, w: w / W, h: h / H };
+  }
+  async function openPhotoEditor(p, i) {
+    const id = p.photos[i], url = await mediaURL(id);
+    const img = new Image();
+    img.src = url;
+    try { await img.decode(); } catch { return toast("Couldn't open this photo"); }
+    ed = { p, i, id, img, rot: 0, ratio: "free" };
+    fitCrop();
+    openModal(`<div class="form">
+      ${sheetHead("Edit photo")}
+      <div class="sheet-body">
+        <div class="ed-stage" id="edStage"><canvas id="edCanvas"></canvas><div class="crop" id="edCrop">
+          ${["nw", "ne", "sw", "se"].map((c) => `<span class="h h-${c}" data-c="${c}"></span>`).join("")}</div></div>
+        <div class="ed-tools">
+          <button type="button" class="btn small ghost" data-action="edRotate" data-d="-1">⟲ Rotate</button>
+          <button type="button" class="btn small ghost" data-action="edRotate" data-d="1">⟳ Rotate</button>
+          <button type="button" class="btn small ghost" data-action="edReset">Reset</button>
+        </div>
+        <div class="chips ed-ratios">${Object.entries(RATIOS).map(([k, [label]]) =>
+          `<button type="button" class="chip${k === "free" ? " on" : ""}" data-action="edRatio" data-r="${k}">${label}</button>`).join("")}</div>
+        <p class="hint">Drag the box to move it, or its corners to resize. Saving replaces the photo.</p>
+      </div>
+      <div class="actions">
+        <button type="button" class="btn ghost" data-action="photo" data-id="${esc(p.id)}" data-i="${i}">Cancel</button>
+        <button type="button" class="btn" data-action="edSave">Save</button>
+      </div>
+    </div>`, { sheet: true });
+    drawEditor();
+  }
+  function drawEditor() {
+    const stage = $("#edStage"), c = $("#edCanvas");
+    if (!stage || !ed) return;
+    const [W, H] = edSize();
+    const scale = Math.min(stage.clientWidth / W, (window.innerHeight * 0.55) / H);
+    c.width = Math.round(W * scale);
+    c.height = Math.round(H * scale);
+    drawRotated(c.getContext("2d"), scale);
+    stage.style.height = c.height + "px";
+    placeCrop();
+  }
+  function placeCrop() {
+    const c = $("#edCanvas"), box = $("#edCrop"), k = ed.crop;
+    Object.assign(box.style, { left: c.offsetLeft + k.x * c.width + "px", top: c.offsetTop + k.y * c.height + "px",
+      width: k.w * c.width + "px", height: k.h * c.height + "px" });
+  }
+  let drag = null;
+  document.addEventListener("pointerdown", (e) => {
+    const box = e.target.closest && e.target.closest("#edCrop");
+    if (!box || !ed) return;
+    e.preventDefault();
+    const c = $("#edCanvas");
+    drag = { corner: e.target.dataset.c || "", x: e.clientX, y: e.clientY, start: { ...ed.crop }, cw: c.width, ch: c.height };
+  });
+  document.addEventListener("pointermove", (e) => {
+    if (!drag || !ed) return;
+    const dx = (e.clientX - drag.x) / drag.cw, dy = (e.clientY - drag.y) / drag.ch, s0 = drag.start, MIN = 0.08;
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    let { x, y, w, h } = s0;
+    if (!drag.corner) {
+      x = clamp(s0.x + dx, 0, 1 - s0.w);
+      y = clamp(s0.y + dy, 0, 1 - s0.h);
+    } else {
+      const left = drag.corner.includes("w"), top = drag.corner.includes("n");
+      w = clamp(left ? s0.w - dx : s0.w + dx, MIN, left ? s0.x + s0.w : 1 - s0.x);
+      h = clamp(top ? s0.h - dy : s0.h + dy, MIN, top ? s0.y + s0.h : 1 - s0.y);
+      const r = RATIOS[ed.ratio][1];
+      if (r) {
+        // Keep the chosen shape: fit the height to the width, shrinking both if it runs off the photo.
+        const [W, H] = edSize(), maxH = top ? s0.y + s0.h : 1 - s0.y, maxW = left ? s0.x + s0.w : 1 - s0.x;
+        h = (w * W) / r / H;
+        if (h > maxH) { h = maxH; w = (h * H * r) / W; }
+        if (w > maxW) { w = maxW; h = (w * W) / r / H; }
+      }
+      x = left ? s0.x + s0.w - w : s0.x;
+      y = top ? s0.y + s0.h - h : s0.y;
+    }
+    ed.crop = { x, y, w, h };
+    placeCrop();
+  });
+  document.addEventListener("pointerup", () => { drag = null; });
+  document.addEventListener("pointercancel", () => { drag = null; });
+  window.addEventListener("resize", () => { if (ed && $("#edStage")) drawEditor(); });
+  async function saveEditedPhoto() {
+    const [W, H] = edSize(), k = ed.crop;
+    const scale = Math.min(1, 2400 / Math.max(k.w * W, k.h * H));
+    const c = document.createElement("canvas");
+    c.width = Math.max(1, Math.round(k.w * W * scale));
+    c.height = Math.max(1, Math.round(k.h * H * scale));
+    const ctx = c.getContext("2d");
+    ctx.scale(scale, scale);
+    ctx.translate(-k.x * W, -k.y * H);
+    drawRotated(ctx, 1);
+    const blob = await new Promise((r) => c.toBlob(r, "image/jpeg", 0.9));
+    if (!blob) return toast("Couldn't save the photo");
+    const { p, i, id } = ed;
+    const old = await media.get(id);
+    await media.put({ ...(old || { id, kind: "photo", name: "photo.jpg", created: Date.now() }), type: "image/jpeg", blob });
+    forgetURL(id);
+    p.updated = Date.now();
+    save();
+    ed = null;
+    render();
+    openModal(photoViewer(p, i));
+    toast("Photo saved");
+  }
+
+  function trimHTML(p, id) {
+    const tr = p.trims[id];
+    return `<div class="form">
+      ${sheetHead("Trim video")}
+      <div class="sheet-body">
+        <video id="trimVideo" controls playsinline preload="auto" ${mediaAttr(id)}></video>
+        <div class="trim-row"><label>Start <b id="trimStartLbl"></b><input type="range" id="trimStart" min="0" max="1" step="0.1" value="0" data-v="${tr ? tr.start : 0}"></label></div>
+        <div class="trim-row"><label>End <b id="trimEndLbl"></b><input type="range" id="trimEnd" min="0" max="1" step="0.1" value="1" data-v="${tr ? tr.end : ""}"></label></div>
+        <div class="ed-tools">
+          <button type="button" class="btn small ghost" data-action="trimHere" data-which="start">Start here</button>
+          <button type="button" class="btn small ghost" data-action="trimHere" data-which="end">End here</button>
+          <button type="button" class="btn small ghost" data-action="trimPlay">▶ Play trimmed part</button>
+        </div>
+        <p class="hint">The app will only play between these points. The original video is kept, so you can change this later, and "Save to camera roll" saves the full video.</p>
+      </div>
+      <div class="actions">
+        ${tr ? `<button type="button" class="btn ghost danger" data-action="trimClear" data-id="${esc(p.id)}" data-m="${esc(id)}">Remove trim</button>` : ""}
+        <button type="button" class="btn ghost" data-action="close">Cancel</button>
+        <button type="button" class="btn" data-action="trimSave" data-id="${esc(p.id)}" data-m="${esc(id)}">Save</button>
+      </div>
+    </div>`;
+  }
+  function trimSync() {
+    const v = $("#trimVideo"), s = $("#trimStart"), e = $("#trimEnd");
+    if (!v || !s) return;
+    $("#trimStartLbl").textContent = fmtSecs(Number(s.value));
+    $("#trimEndLbl").textContent = fmtSecs(Number(e.value));
+  }
+  function trimReady() {
+    const v = $("#trimVideo"), s = $("#trimStart"), e = $("#trimEnd");
+    if (!v || !s || !Number.isFinite(v.duration)) return;
+    const d = Math.floor(v.duration * 10) / 10;
+    s.max = e.max = d;
+    // Saved points can only be applied once the slider knows the video's length.
+    if (s.dataset.v != null) { s.value = Math.min(Number(s.dataset.v) || 0, d); delete s.dataset.v; }
+    if (e.dataset.v != null) { e.value = e.dataset.v ? Math.min(Number(e.dataset.v), d) : d; delete e.dataset.v; }
+    trimSync();
+  }
+  // Videos with data-start/data-end only play between those points.
+  document.addEventListener("play", (e) => {
+    const v = e.target, st = Number(v.dataset.start), en = Number(v.dataset.end);
+    if (v.tagName === "VIDEO" && v.dataset.end && (v.currentTime < st || v.currentTime >= en - 0.05)) v.currentTime = st;
+  }, true);
+  document.addEventListener("timeupdate", (e) => {
+    const v = e.target;
+    if (v.tagName === "VIDEO" && v.dataset.end && v.currentTime >= Number(v.dataset.end)) { v.pause(); v.currentTime = Number(v.dataset.start); }
+  }, true);
+  document.addEventListener("loadedmetadata", (e) => {
+    const v = e.target;
+    if (v.id === "trimVideo") trimReady();
+    else if (v.tagName === "VIDEO" && v.dataset.start) v.currentTime = Number(v.dataset.start);
+  }, true);
 
   function settingsHTML() {
     const pre = state.settings.prefixes;
@@ -1115,6 +1308,52 @@
     exportBackup: () => exportBackup($("#withVideos").checked).catch(() => toast("Backup failed")),
     importBackup: () => $("#importInput").click(),
     exportCSV,
+    editPhoto: (el) => openPhotoEditor(pOf(el), Number(el.dataset.i)),
+    edRotate(el) { ed.rot = (ed.rot + Number(el.dataset.d) + 4) % 4; fitCrop(); drawEditor(); },
+    edReset() { ed.rot = 0; ed.ratio = "free"; fitCrop(); drawEditor(); document.querySelectorAll(".ed-ratios .chip").forEach((c) => c.classList.toggle("on", c.dataset.r === "free")); },
+    edRatio(el) {
+      ed.ratio = el.dataset.r;
+      document.querySelectorAll(".ed-ratios .chip").forEach((c) => c.classList.toggle("on", c === el));
+      fitCrop();
+      placeCrop();
+    },
+    edSave: () => saveEditedPhoto().catch(() => toast("Couldn't save the photo")),
+    trimVideo(el) {
+      openModal(trimHTML(pOf(el), el.dataset.m), { sheet: true });
+      trimReady();
+    },
+    trimHere(el) {
+      const v = $("#trimVideo"), input = $(el.dataset.which === "start" ? "#trimStart" : "#trimEnd");
+      input.value = v.currentTime;
+      trimSync();
+    },
+    trimPlay() {
+      const v = $("#trimVideo");
+      v.dataset.start = $("#trimStart").value;
+      v.dataset.end = $("#trimEnd").value;
+      v.currentTime = Number(v.dataset.start);
+      v.play().catch(() => {});
+    },
+    trimSave(el) {
+      const p = pOf(el), start = Number($("#trimStart").value), end = Number($("#trimEnd").value), v = $("#trimVideo");
+      if (!(end > start + 0.2)) return toast("End must be after the start");
+      const full = Number.isFinite(v.duration) && start <= 0.05 && end >= Math.floor(v.duration * 10) / 10 - 0.05;
+      if (full) delete p.trims[el.dataset.m]; else p.trims[el.dataset.m] = { start, end };
+      p.updated = Date.now();
+      save();
+      closeModal();
+      render();
+      toast(full ? "Showing the full video" : "Trim saved");
+    },
+    trimClear(el) {
+      const p = pOf(el);
+      delete p.trims[el.dataset.m];
+      p.updated = Date.now();
+      save();
+      closeModal();
+      render();
+      toast("Trim removed");
+    },
     renumber: () => openModal(renumberHTML(renumberPlan()), { sheet: true }),
     applyRenumber() {
       const changes = renumberPlan();
@@ -1159,6 +1398,7 @@
       if (id) {
         const p = find(id);
         Object.assign(p, fields, { updated: Date.now() });
+        p.trims = normTrims(p.trims, p.videos);
         p.sessions.push(...extra);
         save();
         render();
@@ -1226,6 +1466,13 @@
     }
     if (t.name === "code" && t.form && t.form.dataset.form === "project") t.dataset.auto = "0";
     if (t.classList.contains("opt-new")) refreshPick(t.closest(".mat-field"));
+    if (t.id === "trimStart" || t.id === "trimEnd") {
+      const s = $("#trimStart"), e = $("#trimEnd");
+      if (t.id === "trimStart" && Number(s.value) > Number(e.value) - 0.2) s.value = Math.max(0, Number(e.value) - 0.2);
+      if (t.id === "trimEnd" && Number(e.value) < Number(s.value) + 0.2) e.value = Number(s.value) + 0.2;
+      $("#trimVideo").currentTime = Number(t.value);
+      trimSync();
+    }
   });
   document.addEventListener("change", (e) => {
     const t = e.target;
@@ -1277,6 +1524,7 @@
   });
   modal.addEventListener("close", () => {
     modal.innerHTML = "";
+    ed = null;
     unlockPage();
     discardDraft();
   });

@@ -20,6 +20,8 @@ It then opens like a normal app and works without internet.
 - **Materials** and **Finish** (beeswax, CA glue, Danish oil…): your 5 most recently used choices are shown; tap to pick. Type in the search box to find any other choice, or tap **＋ Add** to put a new one on the list. Remove choices from the lists in ⚙︎ Settings.
 - Photos and videos: tap **＋ Add photo** / **＋ Add video** in the project form or on the project page. On iPhone, Apple's menu then lets you choose **Photo Library** or **Take Photo**. The first photo is the cover.
 - **Fields follow the status:** For sale shows the asking price and where it's listed; Sold shows the full sale details; Gifted shows who it was for, the date and occasion; Kept shows where it lives. The completion date appears once a piece is finished.
+- **Edit photos:** open a photo and tap **✂︎ Edit** to rotate or crop it (free, square, 4:3 or 3:4). Saving replaces the photo.
+- **Trim videos:** tap **✂︎ Trim** under a video to set start and end points. The app only plays that part; the original file is kept.
 - **Save to camera roll:** open any photo, or look under any video, and tap **Save to camera roll**. On iPhone, tap **Save Image** / **Save Video** in the menu that pops up.
 - **Timer:** tap ▶ Start when you begin working and ■ Stop when you finish. It keeps counting even if you close the app. Open **Time log** to fix a session you forgot to stop, delete an entry (×), add time by hand, or **Reset timer** back to zero.
 - Sale details: if you enter a materials cost, the app works out your profit and what you earned per hour.
