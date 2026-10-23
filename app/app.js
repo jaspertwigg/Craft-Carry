@@ -2,6 +2,7 @@
   "use strict";
 
   // ---------- constants ----------
+  // Storage names predate the JT Creations rename; changing them would lose saved projects.
   const KEY = "workshop-log-v1";
   const LINES = {
     wood: { name: "Wood Talking", emoji: "🪵", craft: "Woodwork" },
@@ -31,7 +32,7 @@
 
   const $ = (s, r = document) => r.querySelector(s);
   const view = $("#view"), modal = $("#modal"), toastEl = $("#toast");
-  const ui = { q: "", status: "All", logOpen: false };
+  const ui = { q: "", status: "All", line: "All", logOpen: false };
   let pendingMediaFor = null;
 
   // ---------- helpers ----------
@@ -115,6 +116,7 @@
       if (typeof pre[k] === "string" && pre[k].trim()) out.settings.prefixes[k] = pre[k].trim().toUpperCase();
     }
     if (s.settings && typeof s.settings.sort === "string") out.settings.sort = s.settings.sort;
+    if (s.settings && LINES[s.settings.lastLine]) out.settings.lastLine = s.settings.lastLine;
     for (const kind of Object.keys(PICKS)) {
       const saved = (s.settings && s.settings[kind]) || {};
       for (const k of Object.keys(LINES)) {
@@ -353,7 +355,7 @@
   // ---------- navigation ----------
   function route() {
     const [a, b] = location.hash.replace(/^#\/?/, "").split("/");
-    if (LINES[a]) return { name: "line", line: a };
+    if (LINES[a]) { ui.line = a; history.replaceState(history.state, "", "#/"); return { name: "home" }; }
     if (a === "p" && find(b)) return { name: "project", id: b, line: find(b).line };
     return { name: "home" };
   }
@@ -365,7 +367,7 @@
   function goBack() {
     const r = route();
     if (history.state && history.state.d > 0) return history.back();
-    history.replaceState({ d: 0 }, "", r.name === "project" ? "#/" + r.line : "#/");
+    history.replaceState({ d: 0 }, "", "#/");
     render();
     window.scrollTo(0, 0);
   }
@@ -383,7 +385,7 @@
     return `<button class="pcard" data-action="go" data-to="#/p/${esc(p.id)}">
       ${thumb(p)}
       <span class="pbody">
-        <span class="prow"><span class="code">${esc(p.code || "No code")}</span>${statusPill(p.status)}</span>
+        <span class="prow"><span class="code code-${p.line}">${esc(p.code || "No code")}</span>${statusPill(p.status)}</span>
         <span class="pname">${esc(p.name)}${p.materials.length ? `<span class="pmats"> | ${esc(p.materials.join(", "))}</span>` : ""}</span>
         ${done ? `<span class="pmeta">${done}</span>` : ""}
       </span>
@@ -415,26 +417,18 @@
 
   const views = {
     home() {
-      const brand = (line) => {
-        const s = stats(ofLine(line));
-        return `<button class="brand brand-${line}" data-action="go" data-to="#/${line}">
-          <span class="brand-mark">${LINES[line].emoji}</span>
-          <span class="brand-name">${esc(LINES[line].name)}</span>
-          <span class="brand-sub">${LINES[line].craft} · ${s.count} project${s.count === 1 ? "" : "s"} · ${s.hours.toFixed(1)} h</span>
-        </button>`;
-      };
-      const recent = [...state.projects].sort((a, b) => b.updated - a.updated).slice(0, 4);
-      return `${runningCard()}
-        <section class="brands">${brand("wood")}${brand("leather")}</section>
-        ${recent.length ? `<h2 class="section">Recently updated</h2><div class="list">${recent.map(card).join("")}</div>`
-          : `<p class="empty">Pick a workshop above to add your first project.</p>`}`;
-    },
-
-    line({ line }) {
-      const list = ofLine(line);
+      if (!state.projects.length) return `${runningCard()}
+        <div class="welcome">
+          <h2>Welcome to JT Creations</h2>
+          <p class="muted">Record every Wood Talking and Craft &amp; Carry piece in one place.</p>
+        </div>
+        <button class="btn block big" data-action="newProject">＋ New project</button>`;
+      const list = ui.line === "All" ? state.projects : ofLine(ui.line);
       const s = stats(list);
       const present = STATUSES.filter((st) => list.some((p) => p.status === st));
       if (ui.status !== "All" && !present.includes(ui.status)) ui.status = "All";
+      const lineChip = (k, label) => `<button class="chip line-chip${ui.line === k ? " on" : ""}" data-action="filterLine" data-line="${k}">${label}
+        <small>${k === "All" ? state.projects.length : ofLine(k).length}</small></button>`;
       return `${runningCard()}
         <section class="stats">
           <div><b>${s.count}</b><span>projects</span></div>
@@ -442,16 +436,16 @@
           <div><b>${s.hours.toFixed(1)}</b><span>hours</span></div>
           <div><b>${s.sold ? money(s.revenue).replace(/\.00$/, "") : "—"}</b><span>${s.sold} sold</span></div>
         </section>
-        <button class="btn block big" data-action="newProject" data-line="${line}">＋ New ${esc(LINES[line].name)} project</button>
-        ${list.length ? `<div class="list-tools">
-            <input id="search" type="search" placeholder="Search…" value="${esc(ui.q)}" autocomplete="off">
-            <label class="sort"><select id="sortBy" aria-label="Sort by">${Object.entries(SORTS).map(([k, o]) =>
-              `<option value="${k}"${state.settings.sort === k ? " selected" : ""}>${o.label}</option>`).join("")}</select></label>
-          </div>
-          <div class="chips">${["All", ...present].map((st) =>
-            `<button class="chip${ui.status === st ? " on" : ""}" data-action="filter" data-status="${esc(st)}">${esc(st)}</button>`).join("")}</div>
-          <div id="list" class="list">${listHTML(line)}</div>`
-          : `<p class="empty">No projects yet. Tap the button above to record your first one.</p>`}`;
+        <button class="btn block big" data-action="newProject">＋ New project</button>
+        <div class="list-tools">
+          <input id="search" type="search" placeholder="Search…" value="${esc(ui.q)}" autocomplete="off">
+          <label class="sort"><select id="sortBy" aria-label="Sort by">${Object.entries(SORTS).map(([k, o]) =>
+            `<option value="${k}"${state.settings.sort === k ? " selected" : ""}>${o.label}</option>`).join("")}</select></label>
+        </div>
+        <div class="line-chips">${lineChip("All", "All")}${Object.keys(LINES).map((k) => lineChip(k, `${LINES[k].emoji} ${esc(LINES[k].name)}`)).join("")}</div>
+        <div class="chips">${["All", ...present].map((st) =>
+          `<button class="chip${ui.status === st ? " on" : ""}" data-action="filter" data-status="${esc(st)}">${st === "All" ? "Any status" : esc(st)}</button>`).join("")}</div>
+        <div id="list" class="list">${listHTML()}</div>`;
     },
 
     project({ id }) {
@@ -590,9 +584,9 @@
     status: { label: "Status", by: (a, b) => STATUSES.indexOf(a.status) - STATUSES.indexOf(b.status) },
     updated: { label: "Recently updated", by: (a, b) => b.updated - a.updated },
   };
-  function listHTML(line) {
+  function listHTML() {
     const q = ui.q.trim().toLowerCase();
-    const list = ofLine(line)
+    const list = (ui.line === "All" ? state.projects : ofLine(ui.line))
       .filter((p) => ui.status === "All" || p.status === ui.status)
       .filter((p) => !q || [p.name, p.code, p.materials.join(" "), p.finishes.join(" "), p.description, p.purpose, p.sale.buyer, p.gift.to, p.gift.occasion, p.notes]
         .some((v) => v.toLowerCase().includes(q)))
@@ -608,8 +602,7 @@
     $("#editBtn").hidden = r.name !== "project";
     $("#editBtn").dataset.id = r.id || "";
     $("#settingsBtn").hidden = r.name === "project";
-    $("#title").textContent = r.name === "home" ? "Workshop Log"
-      : r.name === "line" ? LINES[r.line].name : find(r.id).code || find(r.id).name;
+    $("#title").textContent = r.name === "home" ? "JT Creations" : find(r.id).code || find(r.id).name;
     view.innerHTML = views[r.name](r);
     hydrate();
   }
@@ -663,14 +656,17 @@
     // The completed date follows the start date until it's changed by hand.
     const endFollows = !d.end || d.end === d.start;
     return `<form data-form="project" data-id="${isNew ? "" : esc(p.id)}" data-line="${line}" class="form" novalidate>
-      ${sheetHead(isNew ? "New " + esc(LINES[line].name) + " project" : "Edit " + esc(d.code || "project"))}
+      ${sheetHead(isNew ? "New project" : "Edit " + esc(d.code || "project"))}
       <div class="sheet-body">
+      ${isNew ? `<div class="seg" role="radiogroup" aria-label="Workshop">${Object.keys(LINES).map((k) =>
+        `<label class="seg-opt seg-${k}"><input type="radio" name="line" value="${k}"${k === line ? " checked" : ""}><span>${LINES[k].emoji} ${esc(LINES[k].name)}</span></label>`).join("")}</div>`
+        : `<p class="muted">${LINES[line].emoji} ${esc(LINES[line].name)}</p>`}
       <label>Name<input name="name" ${v(d.name)} placeholder="e.g. Jarrah cutting board" enterkeyhint="next"></label>
       <div class="two">
         <label>Code<input name="code" ${v(d.code)} data-auto="${isNew ? 1 : 0}" autocapitalize="characters"></label>
         <label>Status<select name="status">${STATUSES.map((x) => `<option${x === d.status ? " selected" : ""}>${x}</option>`).join("")}</select></label>
       </div>
-      ${isNew ? `<p class="hint">Code is filled in automatically: ${esc(state.settings.prefixes[line])} + year + item number. You can change it.</p>` : ""}
+      ${isNew ? `<p class="hint">Code is filled in automatically: <span id="codePrefix">${esc(state.settings.prefixes[line])}</span> + year + item number. You can change it.</p>` : ""}
       <div class="two dates">
         <label>Start date<input type="date" name="start" ${v(d.start)}${d.datesUnknown ? " disabled" : ""}></label>
         <label data-for="${DONE_FOR}">Completed<input type="date" name="end" ${v(endFollows ? d.start : d.end)} data-auto="${endFollows ? 1 : 0}"${d.datesUnknown ? " disabled" : ""}></label>
@@ -748,6 +744,7 @@
   }
   function openProjectForm(p, line) {
     draft = { photos: p ? [...p.photos] : [], videos: p ? [...p.videos] : [], added: [], removed: [] };
+    document.body.dataset.line = line;
     openModal(projectForm(p, line), { sheet: true });
     applyStatus(modal.querySelector("form"));
   }
@@ -795,7 +792,7 @@
   }
   const PICK_SHOWN = 5;
   const matChip = (m, on, hidden = false) =>
-    `<button type="button" class="mat${on ? " on" : ""}${hidden ? "" : " top"}" data-action="toggleMat" data-v="${esc(m)}" aria-pressed="${on}"${hidden ? " hidden" : ""}>${esc(m)}</button>`;
+    `<button type="button" class="mat${on ? " on" : ""}${hidden ? "" : " pick-top"}" data-action="toggleMat" data-v="${esc(m)}" aria-pressed="${on}"${hidden ? " hidden" : ""}>${esc(m)}</button>`;
   // Show ticked + top choices when the search box is empty, otherwise ticked + matches, and offer to add what was typed.
   function refreshPick(field) {
     const input = field.querySelector(".opt-new"), add = field.querySelector("[data-action=addOpt]");
@@ -804,7 +801,7 @@
     for (const chip of field.querySelectorAll(".mat")) {
       const name = chip.dataset.v.toLowerCase();
       if (name === q) exact = true;
-      chip.hidden = !(chip.classList.contains("on") || (q ? name.includes(q) : chip.classList.contains("top")));
+      chip.hidden = !(chip.classList.contains("on") || (q ? name.includes(q) : chip.classList.contains("pick-top")));
       if (!chip.hidden) shown++;
     }
     field.querySelector(".mats").hidden = !shown;
@@ -1124,18 +1121,18 @@
   async function exportBackup(withVideos) {
     toast("Preparing backup…");
     const recs = await media.all();
-    const out = { app: "workshop-log", version: 1, exported: new Date().toISOString(), data: state, media: [] };
+    const out = { app: "jt-creations", version: 1, exported: new Date().toISOString(), data: state, media: [] };
     for (const r of recs) {
       if (r.kind === "video" && !withVideos) continue;
       out.media.push({ id: r.id, kind: r.kind, type: r.type, name: r.name, created: r.created, data: await blobToDataURL(r.blob) });
     }
-    download(new Blob([JSON.stringify(out)], { type: "application/json" }), `workshop-log-backup-${todayISO()}.json`);
+    download(new Blob([JSON.stringify(out)], { type: "application/json" }), `jt-creations-backup-${todayISO()}.json`);
   }
   async function importBackup(file) {
     let obj;
-    try { obj = JSON.parse(await file.text()); } catch { return toast("That file isn't a Workshop Log backup"); }
+    try { obj = JSON.parse(await file.text()); } catch { return toast("That file isn't a JT Creations backup"); }
     const data = obj && (obj.data || obj);
-    if (!data || !Array.isArray(data.projects)) return toast("That file isn't a Workshop Log backup");
+    if (!data || !Array.isArray(data.projects)) return toast("That file isn't a JT Creations backup");
     if (!confirm(`Replace everything on this device with the backup (${data.projects.length} projects)?`)) return;
     toast("Restoring…");
     for (const m of Array.isArray(obj.media) ? obj.media : []) {
@@ -1170,7 +1167,7 @@
     const rows = [cols.map((c) => cell(c[0])).join(",")];
     const list = [...state.projects].sort((a, b) => a.line.localeCompare(b.line) || a.code.localeCompare(b.code));
     for (const p of list) rows.push(cols.map((c) => cell(c[1](p))).join(","));
-    download(new Blob(["﻿" + rows.join("\r\n")], { type: "text/csv" }), `workshop-log-${todayISO()}.csv`);
+    download(new Blob(["﻿" + rows.join("\r\n")], { type: "text/csv" }), `jt-creations-${todayISO()}.csv`);
   }
 
   // ---------- actions ----------
@@ -1189,7 +1186,8 @@
       }
     },
     filter(el) { ui.status = el.dataset.status; render(); },
-    newProject: (el) => openProjectForm(null, el.dataset.line),
+    newProject: () => openProjectForm(null, ui.line !== "All" ? ui.line : state.settings.lastLine || "wood"),
+    filterLine(el) { ui.line = el.dataset.line; render(); },
     edit: (el) => { const p = pOf(el); openProjectForm(p, p.line); },
     async delProject(el) {
       const p = pOf(el);
@@ -1197,7 +1195,7 @@
       for (const id of [...p.photos, ...p.videos]) { forgetURL(id); await media.del(id).catch(() => {}); }
       state.projects = state.projects.filter((x) => x !== p);
       save();
-      history.replaceState({ d: 0 }, "", "#/" + p.line);
+      history.replaceState({ d: 0 }, "", "#/");
       render();
       toast("Project deleted");
     },
@@ -1397,6 +1395,7 @@
       draft = null;
       closeModal();
       markUsed({ line: f.dataset.line, ...fields });
+      state.settings.lastLine = f.dataset.line;
       if (id) {
         const p = find(id);
         Object.assign(p, fields, { updated: Date.now() });
@@ -1464,7 +1463,7 @@
     if (t.id === "search") {
       ui.q = t.value;
       const r = route(), list = $("#list");
-      if (list && r.name === "line") { list.innerHTML = listHTML(r.line); hydrate(); }
+      if (list && r.name === "home") { list.innerHTML = listHTML(); hydrate(); }
     }
     if ((t.name === "code" || t.name === "end") && t.form && t.form.dataset.form === "project") t.dataset.auto = "0";
     if (t.classList.contains("opt-new")) refreshPick(t.closest(".mat-field"));
@@ -1488,7 +1487,7 @@
       state.settings.sort = t.value;
       save();
       const r = route(), list = $("#list");
-      if (list && r.name === "line") { list.innerHTML = listHTML(r.line); hydrate(); }
+      if (list && r.name === "home") { list.innerHTML = listHTML(); hydrate(); }
       return;
     }
     if (t.id === "importInput") {
@@ -1499,6 +1498,21 @@
     }
     const f = t.form;
     if (!f || f.dataset.form !== "project") return;
+    if (t.name === "line") {
+      // New project moved to the other workshop: its code, theme and material/finish lists follow.
+      f.dataset.line = t.value;
+      document.body.dataset.line = t.value;
+      const pre = $("#codePrefix");
+      if (pre) pre.textContent = state.settings.prefixes[t.value];
+      if (f.code.dataset.auto === "1") {
+        const year = f.start.value ? parse(f.start.value).getFullYear() : new Date().getFullYear();
+        f.code.value = nextCode(t.value, year, f.dataset.id);
+      }
+      for (const field of f.querySelectorAll(".mat-field")) {
+        field.outerHTML = pickField(field.querySelector(".mats").dataset.kind, t.value, []);
+      }
+      return;
+    }
     if (t.name === "end") f.end.dataset.auto = "0";
     if (t.name === "start" && f.end.dataset.auto === "1") f.end.value = t.value;
     if (t.name === "start" && f.code.dataset.auto === "1") {
@@ -1528,6 +1542,7 @@
   });
   modal.addEventListener("close", () => {
     modal.innerHTML = "";
+    document.body.dataset.line = route().line || "";
     ed = null;
     unlockPage();
     discardDraft();

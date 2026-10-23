@@ -1,6 +1,6 @@
-# Workshop Log — Wood Talking & Craft & Carry
+# JT Creations
 
-A simple phone app for recording the things I make:
+A simple phone app for recording the things I make, all in one library:
 
 - **Wood Talking**: woodwork, coded `WT` + year + item number (e.g. `WT2601` is the first piece of 2026)
 - **Craft & Carry**: leatherwork, coded `CC` + year + item number (e.g. `CC2601`)
@@ -11,7 +11,7 @@ A simple phone app for recording the things I make:
 - **iPhone (Safari):** open the link, tap **Share → Add to Home Screen**.
 - **Android (Chrome):** open the link, tap **⋮ → Add to Home screen / Install app**.
 
-It then opens like a normal app and works without internet.
+It then opens like a normal app and works without internet. If you added the old "Workshop" icon to your home screen, remove it and add the app again to get the new name and icon (your projects stay).
 
 ## What each project records
 - Name, code (filled in automatically, but you can change it) and status (Idea, In progress, Finished, For sale, Sold, Gifted, Kept)
@@ -27,7 +27,7 @@ It then opens like a normal app and works without internet.
 - Sale details: if you enter a materials cost, the app works out your profit and what you earned per hour.
 
 ## Finding projects
-Each workshop's list has a search box, status filters and a **Sort** menu: newest added, code (newest or oldest), completed date (newest or oldest), name, material, status or recently updated. The app remembers your choice.
+The home screen lists every project. Filter by workshop (All / Wood Talking / Craft & Carry) and by status, search, and use the **Sort** menu: newest added, code (newest or oldest), completed date (newest or oldest), name, material, status or recently updated. The app remembers your choice.
 
 ## Your data
 Everything is stored **only on your phone**. Nothing is uploaded anywhere.

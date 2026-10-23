@@ -1,15 +1,27 @@
 {
-  "name": "Workshop Log",
-  "short_name": "Workshop",
-  "description": "A record of Wood Talking and Craft & Carry projects.",
+  "name": "JT Creations",
+  "short_name": "JT Creations",
+  "description": "A record of Wood Talking and Craft & Carry pieces.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "background_color": "#f5efe6",
-  "theme_color": "#4a2e1b",
+  "theme_color": "#3d2415",
   "icons": [
-    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" },
-    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
   ]
 }
