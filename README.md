@@ -26,8 +26,11 @@ It then opens like a normal app and works without internet. If you added the old
 - **Timer:** tap ▶ Start when you begin working and ■ Stop when you finish. It keeps counting even if you close the app. Open **Time log** to fix a session you forgot to stop, delete an entry (×), add time by hand, or **Reset timer** back to zero.
 - Sale details: if you enter a materials cost, the app works out your profit and what you earned per hour.
 
+## Getting around
+The app opens on a landing page with: **Start new project**, **View project list**, **Pick up where you left off** (your most recently updated project), **Wood Talking** and **Craft & Carry** (the list filtered to that workshop), and **Settings & backup**.
+
 ## Finding projects
-The home screen lists every project. Filter by workshop (All / Wood Talking / Craft & Carry) and by status, search, and use the **Sort** menu: newest added, code (newest or oldest), completed date (newest or oldest), name, material, status or recently updated. The app remembers your choice.
+The project list shows every project. Filter by workshop (All / Wood Talking / Craft & Carry) and by status, search, and use the **Sort** menu: newest added, code (newest or oldest), completed date (newest or oldest), name, material, status or recently updated. The app remembers your choice.
 
 ## Your data
 Everything is stored **only on your phone**. Nothing is uploaded anywhere.

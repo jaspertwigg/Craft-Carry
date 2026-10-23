@@ -355,7 +355,9 @@
   // ---------- navigation ----------
   function route() {
     const [a, b] = location.hash.replace(/^#\/?/, "").split("/");
-    if (LINES[a]) { ui.line = a; history.replaceState(history.state, "", "#/"); return { name: "home" }; }
+    // Old #/wood and #/leather links open the list filtered to that workshop.
+    if (LINES[a]) { ui.line = a; history.replaceState(history.state, "", "#/list"); return { name: "list" }; }
+    if (a === "list") return { name: "list" };
     if (a === "p" && find(b)) return { name: "project", id: b, line: find(b).line };
     return { name: "home" };
   }
@@ -367,7 +369,7 @@
   function goBack() {
     const r = route();
     if (history.state && history.state.d > 0) return history.back();
-    history.replaceState({ d: 0 }, "", "#/");
+    history.replaceState({ d: 0 }, "", r.name === "project" ? "#/list" : "#/");
     render();
     window.scrollTo(0, 0);
   }
@@ -417,11 +419,29 @@
 
   const views = {
     home() {
-      if (!state.projects.length) return `${runningCard()}
-        <div class="welcome">
-          <h2>Welcome to JT Creations</h2>
-          <p class="muted">Record every Wood Talking and Craft &amp; Carry piece in one place.</p>
-        </div>
+      const n = (k) => { const c = k ? ofLine(k).length : state.projects.length; return `${c} project${c === 1 ? "" : "s"}`; };
+      const last = [...state.projects].sort((a, b) => b.updated - a.updated)[0];
+      const option = (attrs, icon, title, sub) => `<button class="option" ${attrs}>
+          <span class="option-icon">${icon}</span>
+          <span><span class="option-title">${title}</span><span class="option-sub">${sub}</span></span>
+        </button>`;
+      return `<section class="landing">
+          <img class="landing-logo" src="icon.svg" alt="">
+          <h2>JT Creations</h2>
+          <p class="muted">Wood Talking &amp; Craft &amp; Carry</p>
+        </section>
+        ${runningCard()}
+        <div class="options">
+          ${option('data-action="newProject"', "➕", "Start new project", "Wood Talking or Craft &amp; Carry")}
+          ${option('data-action="openList" data-line="All"', "📋", "View project list", `${n()} · search, filter and sort`)}
+          ${last ? option(`data-action="go" data-to="#/p/${esc(last.id)}"`, "↩︎", "Pick up where you left off", `${esc(last.code)} ${esc(last.name)}`) : ""}
+          ${Object.keys(LINES).map((k) => option(`data-action="openList" data-line="${k}"`, LINES[k].emoji, esc(LINES[k].name), `${LINES[k].craft} · ${n(k)}`)).join("")}
+          ${option('data-action="settings"', "⚙️", "Settings &amp; backup", "Codes, material lists, backup and spreadsheet")}
+        </div>`;
+    },
+
+    list() {
+      if (!state.projects.length) return `<p class="empty">No projects yet.</p>
         <button class="btn block big" data-action="newProject">＋ New project</button>`;
       const list = ui.line === "All" ? state.projects : ofLine(ui.line);
       const s = stats(list);
@@ -601,8 +621,8 @@
     // On a project page the top-right button edits the project; elsewhere it opens settings.
     $("#editBtn").hidden = r.name !== "project";
     $("#editBtn").dataset.id = r.id || "";
-    $("#settingsBtn").hidden = r.name === "project";
-    $("#title").textContent = r.name === "home" ? "JT Creations" : find(r.id).code || find(r.id).name;
+    $("#settingsBtn").hidden = r.name !== "list";
+    $("#title").textContent = r.name === "home" ? "JT Creations" : r.name === "list" ? "Projects" : find(r.id).code || find(r.id).name;
     view.innerHTML = views[r.name](r);
     hydrate();
   }
@@ -1186,8 +1206,10 @@
       }
     },
     filter(el) { ui.status = el.dataset.status; render(); },
-    newProject: () => openProjectForm(null, ui.line !== "All" ? ui.line : state.settings.lastLine || "wood"),
+    // From a filtered list, a new project starts in that workshop; otherwise in the one used last.
+    newProject: () => openProjectForm(null, route().name === "list" && ui.line !== "All" ? ui.line : state.settings.lastLine || "wood"),
     filterLine(el) { ui.line = el.dataset.line; render(); },
+    openList(el) { ui.line = el.dataset.line; ui.status = "All"; ui.q = ""; navigate("#/list"); },
     edit: (el) => { const p = pOf(el); openProjectForm(p, p.line); },
     async delProject(el) {
       const p = pOf(el);
@@ -1195,7 +1217,7 @@
       for (const id of [...p.photos, ...p.videos]) { forgetURL(id); await media.del(id).catch(() => {}); }
       state.projects = state.projects.filter((x) => x !== p);
       save();
-      history.replaceState({ d: 0 }, "", "#/");
+      history.replaceState({ d: 0 }, "", "#/list");
       render();
       toast("Project deleted");
     },
@@ -1463,7 +1485,7 @@
     if (t.id === "search") {
       ui.q = t.value;
       const r = route(), list = $("#list");
-      if (list && r.name === "home") { list.innerHTML = listHTML(); hydrate(); }
+      if (list && r.name === "list") { list.innerHTML = listHTML(); hydrate(); }
     }
     if ((t.name === "code" || t.name === "end") && t.form && t.form.dataset.form === "project") t.dataset.auto = "0";
     if (t.classList.contains("opt-new")) refreshPick(t.closest(".mat-field"));
@@ -1487,7 +1509,7 @@
       state.settings.sort = t.value;
       save();
       const r = route(), list = $("#list");
-      if (list && r.name === "home") { list.innerHTML = listHTML(); hydrate(); }
+      if (list && r.name === "list") { list.innerHTML = listHTML(); hydrate(); }
       return;
     }
     if (t.id === "importInput") {

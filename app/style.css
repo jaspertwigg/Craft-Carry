@@ -373,8 +373,21 @@ dialog.sheet .modal-in > div.form { flex: 1; min-height: 0; display: flex; flex-
 .line-chips { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr); gap: 6px; margin-bottom: 8px; }
 .line-chip { display: flex; align-items: center; justify-content: center; gap: 4px; min-width: 0; padding: 7px 8px; font-size: .84rem; white-space: nowrap; }
 .line-chip small { opacity: .7; font-size: .75rem; }
-.welcome { text-align: center; padding: 28px 8px 18px; }
-.welcome h2 { font-size: 1.4rem; margin-bottom: 6px; }
+/* landing page */
+.landing { text-align: center; padding: 14px 8px 20px; }
+.landing-logo { width: 88px; height: 88px; display: block; margin: 0 auto 10px; filter: drop-shadow(0 4px 10px rgba(40, 20, 8, .25)); }
+.landing h2 { font-size: 1.6rem; margin-bottom: 4px; letter-spacing: .01em; }
+.landing p { margin: 0; }
+.options { display: grid; gap: 10px; }
+.option {
+  display: flex; align-items: center; gap: 14px; width: 100%; padding: 15px 18px; text-align: left;
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow);
+}
+.option:active { transform: scale(.99); }
+.option-icon { flex: none; width: 34px; font-size: 1.6rem; text-align: center; }
+.option-title { display: block; font-weight: 650; }
+.option-sub { display: block; font-size: .86rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+.option > span:last-child { min-width: 0; }
 .seg { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .seg-opt { position: relative; display: block; }
 .seg-opt input { position: absolute; opacity: 0; pointer-events: none; }
