@@ -1,5 +1,5 @@
 // Network-first: always try for the latest version, fall back to the cache when offline.
-const CACHE = "workshop-v19";
+const CACHE = "workshop-v20";
 const ASSETS = ["./", "index.html", "style.css", "app.js", "manifest.webmanifest", "icon.svg", "icon-180.png", "icon-192.png", "icon-512.png"];
 
 self.addEventListener("install", (e) => {

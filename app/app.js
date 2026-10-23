@@ -660,6 +660,8 @@
       sale: {}, gift: {}, kept: {} };
     const s = d.sale, g = d.gift, k = d.kept;
     const v = (x) => `value="${esc(x || "")}"`;
+    // The completed date follows the start date until it's changed by hand.
+    const endFollows = !d.end || d.end === d.start;
     return `<form data-form="project" data-id="${isNew ? "" : esc(p.id)}" data-line="${line}" class="form" novalidate>
       ${sheetHead(isNew ? "New " + esc(LINES[line].name) + " project" : "Edit " + esc(d.code || "project"))}
       <div class="sheet-body">
@@ -671,7 +673,7 @@
       ${isNew ? `<p class="hint">Code is filled in automatically: ${esc(state.settings.prefixes[line])} + year + item number. You can change it.</p>` : ""}
       <div class="two dates">
         <label>Start date<input type="date" name="start" ${v(d.start)}${d.datesUnknown ? " disabled" : ""}></label>
-        <label data-for="${DONE_FOR}">Completed<input type="date" name="end" ${v(d.end)}${d.datesUnknown ? " disabled" : ""}></label>
+        <label data-for="${DONE_FOR}">Completed<input type="date" name="end" ${v(endFollows ? d.start : d.end)} data-auto="${endFollows ? 1 : 0}"${d.datesUnknown ? " disabled" : ""}></label>
       </div>
       <label class="check"><input type="checkbox" name="datesUnknown"${d.datesUnknown ? " checked" : ""}> Dates unknown</label>
       <label>Purpose<input name="purpose" list="purposes" ${v(d.purpose)} placeholder="Who or what is it for?"></label>
@@ -1464,7 +1466,7 @@
       const r = route(), list = $("#list");
       if (list && r.name === "line") { list.innerHTML = listHTML(r.line); hydrate(); }
     }
-    if (t.name === "code" && t.form && t.form.dataset.form === "project") t.dataset.auto = "0";
+    if ((t.name === "code" || t.name === "end") && t.form && t.form.dataset.form === "project") t.dataset.auto = "0";
     if (t.classList.contains("opt-new")) refreshPick(t.closest(".mat-field"));
     if (t.id === "trimStart" || t.id === "trimEnd") {
       const s = $("#trimStart"), e = $("#trimEnd");
@@ -1497,6 +1499,8 @@
     }
     const f = t.form;
     if (!f || f.dataset.form !== "project") return;
+    if (t.name === "end") f.end.dataset.auto = "0";
+    if (t.name === "start" && f.end.dataset.auto === "1") f.end.value = t.value;
     if (t.name === "start" && f.code.dataset.auto === "1") {
       const year = t.value ? parse(t.value).getFullYear() : new Date().getFullYear();
       f.code.value = nextCode(f.dataset.line, year, f.dataset.id);
@@ -1505,7 +1509,7 @@
       for (const n of ["start", "end"]) f[n].disabled = t.checked;
       if (!t.checked && !f.start.value) f.start.value = todayISO();
     }
-    if (t.name === "status" && DONE.includes(t.value) && !f.end.value && !f.datesUnknown.checked) f.end.value = todayISO();
+    if (t.name === "status" && DONE.includes(t.value) && !f.end.value && !f.datesUnknown.checked) f.end.value = f.start.value || todayISO();
     if (t.name === "status") {
       applyStatus(f);
       if (t.value === "Sold" && !f.soldDate.value) f.soldDate.value = todayISO();

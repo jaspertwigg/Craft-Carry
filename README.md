@@ -15,7 +15,7 @@ It then opens like a normal app and works without internet.
 
 ## What each project records
 - Name, code (filled in automatically, but you can change it) and status (Idea, In progress, Finished, For sale, Sold, Gifted, Kept)
-- Start and completion dates (tick **Dates unknown** for older pieces; there's also **Time taken unknown**)
+- Start and completion dates (the completed date matches the start date unless you change it; tick **Dates unknown** for older pieces; there's also **Time taken unknown**)
 - Description, purpose, size and materials cost
 - **Materials** and **Finish** (beeswax, CA glue, Danish oil…): your 5 most recently used choices are shown; tap to pick. Type in the search box to find any other choice, or tap **＋ Add** to put a new one on the list. Remove choices from the lists in ⚙︎ Settings.
 - Photos and videos: tap **＋ Add photo** / **＋ Add video** in the project form or on the project page. On iPhone, Apple's menu then lets you choose **Photo Library** or **Take Photo**. The first photo is the cover.
