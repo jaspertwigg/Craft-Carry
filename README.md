@@ -27,7 +27,7 @@ It then opens like a normal app and works without internet. If you added the old
 - Sale details: if you enter a materials cost, the app works out your profit and what you earned per hour.
 
 ## Getting around
-The app opens on a landing page with: **Start new project**, **View project list**, **Pick up where you left off** (your most recently updated project), **Wood Talking** and **Craft & Carry** (the list filtered to that workshop), and **Settings & backup**.
+The app opens on a landing page with: **Start new project**, **View project list**, **Pick up where you left off** (your most recently updated project), **Share the app** (sends the link; the other person starts with an empty app of their own), and **Settings & backup**.
 
 ## Finding projects
 The project list shows every project. Filter by workshop (All / Wood Talking / Craft & Carry) and by status, search, and use the **Sort** menu: newest added, code (newest or oldest), completed date (newest or oldest), name, material, status or recently updated. The app remembers your choice.

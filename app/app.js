@@ -419,7 +419,7 @@
 
   const views = {
     home() {
-      const n = (k) => { const c = k ? ofLine(k).length : state.projects.length; return `${c} project${c === 1 ? "" : "s"}`; };
+      const n = () => { const c = state.projects.length; return `${c} project${c === 1 ? "" : "s"}`; };
       const last = [...state.projects].sort((a, b) => b.updated - a.updated)[0];
       const option = (attrs, icon, title, sub) => `<button class="option" ${attrs}>
           <span class="option-icon">${icon}</span>
@@ -435,7 +435,7 @@
           ${option('data-action="newProject"', "➕", "Start new project", "Wood Talking or Craft &amp; Carry")}
           ${option('data-action="openList" data-line="All"', "📋", "View project list", `${n()} · search, filter and sort`)}
           ${last ? option(`data-action="go" data-to="#/p/${esc(last.id)}"`, "↩︎", "Pick up where you left off", `${esc(last.code)} ${esc(last.name)}`) : ""}
-          ${Object.keys(LINES).map((k) => option(`data-action="openList" data-line="${k}"`, LINES[k].emoji, esc(LINES[k].name), `${LINES[k].craft} · ${n(k)}`)).join("")}
+          ${option('data-action="shareApp"', "🔗", "Share the app", "Send the link to someone")}
           ${option('data-action="settings"', "⚙️", "Settings &amp; backup", "Codes, material lists, backup and spreadsheet")}
         </div>`;
     },
@@ -1209,6 +1209,16 @@
     // From a filtered list, a new project starts in that workshop; otherwise in the one used last.
     newProject: () => openProjectForm(null, route().name === "list" && ui.line !== "All" ? ui.line : state.settings.lastLine || "wood"),
     filterLine(el) { ui.line = el.dataset.line; render(); },
+    // Shares the link only: projects live on this phone, so the other person starts with an empty app.
+    shareApp() {
+      const url = location.origin + location.pathname;
+      if (navigator.share) {
+        navigator.share({ title: "JT Creations", text: "JT Creations: a record of Wood Talking and Craft & Carry pieces.", url })
+          .catch((e) => { if (e && e.name !== "AbortError") toast("Couldn't open the share menu"); });
+      } else if (navigator.clipboard) {
+        navigator.clipboard.writeText(url).then(() => toast("Link copied"), () => toast(url));
+      } else toast(url);
+    },
     openList(el) { ui.line = el.dataset.line; ui.status = "All"; ui.q = ""; navigate("#/list"); },
     edit: (el) => { const p = pOf(el); openProjectForm(p, p.line); },
     async delProject(el) {
