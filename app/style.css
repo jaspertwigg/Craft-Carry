@@ -398,3 +398,11 @@ dialog.sheet .modal-in > div.form { flex: 1; min-height: 0; display: flex; flex-
 }
 .seg-wood input:checked + span { border-color: var(--wood); background: var(--wood); color: #fff; }
 .seg-leather input:checked + span { border-color: var(--leather); background: var(--leather); color: #fff; }
+
+/* highlight clip */
+.clip-opts { display: grid; gap: 12px; }
+.clip-stage { display: grid; place-items: center; background: #000; border-radius: 10px; overflow: hidden; }
+.clip-stage canvas { display: block; max-width: 100%; max-height: 52dvh; }
+.clip-progress { height: 8px; border-radius: 99px; background: var(--line); overflow: hidden; }
+.clip-progress span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s linear; }
+#clipResult { width: 100%; max-height: 55dvh; border-radius: 10px; background: #000; }

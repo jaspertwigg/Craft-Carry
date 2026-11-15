@@ -553,6 +553,14 @@
             </div>`; }).join("") : `<p class="muted small">No videos yet.</p>`}
         </section>
 
+        <section class="card clip-card">
+          <div class="card-head"><h3>🎬 Highlight clip</h3>
+            <button class="btn small" data-action="clipOpen" data-id="${esc(p.id)}"${p.photos.length + p.videos.length ? "" : " disabled"}>Make a clip</button></div>
+          <p class="muted small">${p.photos.length + p.videos.length
+            ? "Turns this project's photos and videos into a short video of the piece being made."
+            : "Add some photos or videos first, then turn them into a short video of the piece being made."}</p>
+        </section>
+
         ${p.status === "Gifted" || Object.values(p.gift).some(Boolean) ? `<section class="card">
           <h3>Gift</h3>
           ${Object.values(p.gift).some(Boolean) ? `<dl>
@@ -878,6 +886,265 @@
       </div>
     </div>`;
   }
+
+  // ---------- highlight clip ----------
+  // Plays the project's photos and videos onto a canvas (title card, slow zooms, cross-fades, the
+  // cover photo as the reveal, end card) and records it with MediaRecorder. Recording happens in
+  // real time, so a 30-second clip takes about 30 seconds and the screen must stay on.
+  const CLIP_SIZES = { portrait: [720, 1280], square: [960, 960], landscape: [1280, 720] };
+  const CLIP_PACE = { quick: { photo: 1.8, video: 3 }, normal: { photo: 2.6, video: 4.5 }, slow: { photo: 3.6, video: 6 } };
+  const XF = 0.6, CARD = 3;
+  let clip = null;
+  const clipMime = () => window.MediaRecorder && ["video/mp4;codecs=avc1", "video/mp4", "video/webm;codecs=vp9", "video/webm"]
+    .find((t) => MediaRecorder.isTypeSupported(t));
+  const loadImage = (src) => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; });
+  // Photos/videos in the order they were added, finishing on the cover photo; clips made earlier are left out.
+  async function clipShots(p) {
+    const recs = [];
+    for (const id of [...p.photos, ...p.videos]) {
+      const r = await media.get(id).catch(() => null);
+      if (r && !r.clip) recs.push(r);
+    }
+    recs.sort((a, b) => (a.created || 0) - (b.created || 0));
+    const cover = p.photos[0], i = recs.findIndex((r) => r.id === cover);
+    if (i >= 0 && recs.length > 1) recs.push(recs.splice(i, 1)[0]);
+    return recs;
+  }
+  function clipEstimate(n, opts) {
+    const pace = CLIP_PACE[opts.pace];
+    const secs = n.photos * pace.photo + n.videos * pace.video + (opts.title ? CARD : 0) + (opts.end ? CARD : 0);
+    return Math.max(1, Math.round(secs - XF * Math.max(0, n.photos + n.videos + opts.title + opts.end - 1)));
+  }
+  async function clipOpen(p) {
+    const shots = await clipShots(p);
+    const n = { photos: shots.filter((r) => r.kind === "photo").length, videos: shots.filter((r) => r.kind === "video").length };
+    clip = { p, shots, n, blob: null, running: false };
+    const sel = (id, opts, def) => `<select id="${id}">${opts.map(([v, l]) => `<option value="${v}"${v === def ? " selected" : ""}>${l}</option>`).join("")}</select>`;
+    openModal(`<div class="form">
+      ${sheetHead("Make a clip")}
+      <div class="sheet-body">
+        <p class="hint">Uses ${n.photos} photo${n.photos === 1 ? "" : "s"} and ${n.videos} video${n.videos === 1 ? "" : "s"}, in the order you added them, finishing on the cover photo.</p>
+        <div class="clip-opts">
+          <label>Shape${sel("clipShape", [["portrait", "Portrait 9:16 (Reels, Stories)"], ["square", "Square"], ["landscape", "Landscape 16:9"]], state.settings.clipShape || "portrait")}</label>
+          <label>Pace${sel("clipPace", [["quick", "Quick"], ["normal", "Normal"], ["slow", "Slow"]], state.settings.clipPace || "normal")}</label>
+          <label class="check"><input type="checkbox" id="clipTitle" checked> Title card (name, code, materials)</label>
+          <label class="check"><input type="checkbox" id="clipEnd" checked> End card (JT Creations)</label>
+          <p class="hint" id="clipLen"></p>
+        </div>
+        <div class="clip-stage" hidden><canvas id="clipCanvas"></canvas></div>
+        <div class="clip-progress" hidden><span id="clipBar"></span></div>
+        <p class="hint" id="clipStatus"></p>
+        <video id="clipResult" controls playsinline hidden></video>
+      </div>
+      <div class="actions" id="clipActions">
+        <button type="button" class="btn ghost" data-action="close">Cancel</button>
+        <button type="button" class="btn" data-action="clipMake">▶ Make clip</button>
+      </div>
+    </div>`, { sheet: true });
+    clipUpdateLen();
+  }
+  const clipOpts = () => ({ shape: $("#clipShape").value, pace: $("#clipPace").value, title: $("#clipTitle").checked, end: $("#clipEnd").checked });
+  function clipUpdateLen() {
+    const el = $("#clipLen");
+    if (el && clip) el.textContent = `About ${clipEstimate(clip.n, clipOpts())} seconds. It records in real time, so keep the screen on while it's made.`;
+  }
+
+  // Draw an image or video frame filling W×H; if its shape is very different, show it whole over a blurred copy.
+  function drawFill(ctx, src, sw, sh, W, H, zoom = 1, panX = 0, panY = 0) {
+    const cover = Math.max(W / sw, H / sh), contain = Math.min(W / sw, H / sh);
+    const differs = Math.abs(Math.log((sw / sh) / (W / H))) > 0.35;
+    if (differs) {
+      drawBlurred(ctx, src, sw, sh, W, H);
+      const s = contain * zoom * 0.96, dw = sw * s, dh = sh * s;
+      ctx.drawImage(src, (W - dw) / 2 + panX * W * 0.02, (H - dh) / 2 + panY * H * 0.02, dw, dh);
+    } else {
+      const s = cover * zoom, dw = sw * s, dh = sh * s;
+      ctx.drawImage(src, (W - dw) / 2 + (panX * (dw - W)) / 2, (H - dh) / 2 + (panY * (dh - H)) / 2, dw, dh);
+    }
+  }
+  // Cheap blur that works on every phone: shrink the picture right down, then stretch it back up.
+  const blurCanvas = document.createElement("canvas");
+  function drawBlurred(ctx, src, sw, sh, W, H, dim = 0.45) {
+    blurCanvas.width = 24;
+    blurCanvas.height = Math.max(1, Math.round((24 * H) / W));
+    const b = blurCanvas.getContext("2d"), s = Math.max(blurCanvas.width / sw, blurCanvas.height / sh);
+    b.drawImage(src, (blurCanvas.width - sw * s) / 2, (blurCanvas.height - sh * s) / 2, sw * s, sh * s);
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(blurCanvas, 0, 0, W, H);
+    ctx.fillStyle = `rgba(20, 12, 6, ${dim})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+  function wrapText(ctx, text, maxW) {
+    const lines = [];
+    let line = "";
+    for (const word of text.split(/\s+/)) {
+      const t = line ? line + " " + word : word;
+      if (ctx.measureText(t).width > maxW && line) { lines.push(line); line = word; } else line = t;
+    }
+    if (line) lines.push(line);
+    return lines;
+  }
+  const FONT = '-apple-system, "SF Pro Display", "Segoe UI", Roboto, sans-serif';
+  function drawCard(ctx, W, H, t, dur, kind, data) {
+    const { p, coverImg, logo } = data;
+    if (coverImg) drawBlurred(ctx, coverImg, coverImg.naturalWidth, coverImg.naturalHeight, W, H, 0.62);
+    else { const g = ctx.createLinearGradient(0, 0, W, H); g.addColorStop(0, "#5a3620"); g.addColorStop(1, "#22140b"); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); }
+    const u = Math.min(W, H) / 100, rise = Math.max(0, 1 - t / 0.8) * 3 * u;
+    ctx.save();
+    ctx.globalAlpha *= Math.min(1, t / 0.6);
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#fbefd9";
+    const lines = [];
+    if (kind === "title") {
+      ctx.font = `700 ${10 * u}px ${FONT}`;
+      for (const l of wrapText(ctx, p.name, W * 0.86)) lines.push([l, `700 ${10 * u}px ${FONT}`, 11.5 * u, "#fbefd9"]);
+      lines.push([`${p.code}  ·  ${LINES[p.line].name}`, `600 ${4.8 * u}px ${FONT}`, 7.5 * u, "#e6caa0"]);
+      const mat = [p.materials.join(", "), p.finishes.join(", ")].filter(Boolean).join("  ·  ");
+      if (mat) { ctx.font = `400 ${4.2 * u}px ${FONT}`; for (const l of wrapText(ctx, mat, W * 0.84)) lines.push([l, `400 ${4.2 * u}px ${FONT}`, 5.8 * u, "#e6caa0"]); }
+    } else {
+      lines.push(["JT Creations", `700 ${9.5 * u}px ${FONT}`, 11 * u, "#fbefd9"]);
+      lines.push([LINES[p.line].name, `600 ${5 * u}px ${FONT}`, 7 * u, "#e6caa0"]);
+      const when = !p.datesUnknown && (p.end || p.start);
+      if (when) lines.push([parse(when).toLocaleDateString("en-AU", { month: "long", year: "numeric" }), `400 ${4.4 * u}px ${FONT}`, 6 * u, "#e6caa0"]);
+    }
+    const logoSize = (kind === "title" ? 20 : 30) * u;
+    const blockH = logoSize + 6 * u + lines.reduce((a, l) => a + l[2], 0);
+    let y = (H - blockH) / 2 + rise;
+    if (logo) ctx.drawImage(logo, (W - logoSize) / 2, y, logoSize, logoSize);
+    y += logoSize + 6 * u;
+    ctx.textBaseline = "top";
+    ctx.shadowColor = "rgba(0, 0, 0, .45)";
+    ctx.shadowBlur = u;
+    for (const [text, font, lh, color] of lines) { ctx.font = font; ctx.fillStyle = color; ctx.fillText(text, W / 2, y); y += lh; }
+    ctx.restore();
+  }
+
+  async function clipMake() {
+    const c = clip;
+    if (!c || c.running) return;
+    const gone = () => c.cancelled || clip !== c;
+    const mime = clipMime(), canvas = $("#clipCanvas");
+    if (!mime || !canvas.captureStream) return toast("Sorry, this phone can't record clips in the app");
+    const opts = clipOpts(), { p } = c, pace = CLIP_PACE[opts.pace], [W, H] = CLIP_SIZES[opts.shape];
+    state.settings.clipShape = opts.shape;
+    state.settings.clipPace = opts.pace;
+    save();
+    c.running = true;
+    c.cancelled = false;
+    $(".clip-opts").hidden = true;
+    $(".clip-stage").hidden = $(".clip-progress").hidden = false;
+    $("#clipResult").hidden = true;
+    $("#clipActions").innerHTML = `<button type="button" class="btn ghost danger" data-action="clipCancel">Stop</button>`;
+    const status = (t) => { const el = $("#clipStatus"); if (el) el.textContent = t; };
+    status("Getting photos and videos ready…");
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext("2d");
+
+    // Load everything up front so playback doesn't stutter.
+    const logo = await loadImage("icon.svg").catch(() => null);
+    const cover = p.photos[0] ? await loadImage(await mediaURL(p.photos[0])).catch(() => null) : null;
+    const segs = [];
+    if (opts.title) segs.push({ kind: "title", dur: CARD });
+    let n = 0;
+    for (const r of c.shots) {
+      const url = await mediaURL(r.id);
+      if (r.kind === "photo") {
+        const img = await loadImage(url).catch(() => null);
+        if (img) segs.push({ kind: "photo", img, dur: pace.photo + (r.id === p.photos[0] && c.shots.length > 1 ? 1 : 0), dir: n++ % 2 ? 1 : -1 });
+      } else {
+        const v = document.createElement("video");
+        v.muted = true; v.playsInline = true; v.preload = "auto"; v.setAttribute("playsinline", ""); v.src = url;
+        const ok = await new Promise((res) => { v.onloadeddata = () => res(true); v.onerror = () => res(false); setTimeout(() => res(v.readyState >= 2), 8000); });
+        if (!ok || !Number.isFinite(v.duration)) continue;
+        const tr = p.trims[r.id], from = tr ? tr.start : 0, to = tr ? tr.end : v.duration;
+        v.currentTime = from;
+        segs.push({ kind: "video", v, from, dur: Math.max(1, Math.min(to - from, pace.video)) });
+      }
+      if (gone()) return;
+    }
+    if (opts.end) segs.push({ kind: "end", dur: CARD });
+    if (!segs.length) { c.running = false; return status("Nothing to put in the c."); }
+    let at = 0;
+    for (const sg of segs) { sg.start = at; at += sg.dur - XF; }
+    const total = at + XF;
+    const data = { p, coverImg: cover, logo };
+
+    const drawSeg = (sg, t) => {
+      if (sg.kind === "title" || sg.kind === "end") return drawCard(ctx, W, H, t, sg.dur, sg.kind, data);
+      const k = Math.min(1, Math.max(0, t / sg.dur));
+      if (sg.kind === "photo") return drawFill(ctx, sg.img, sg.img.naturalWidth, sg.img.naturalHeight, W, H, 1.04 + 0.1 * k, sg.dir * (k - 0.5), 0);
+      if (sg.v.readyState >= 2) drawFill(ctx, sg.v, sg.v.videoWidth, sg.v.videoHeight, W, H, 1.02);
+    };
+    const frame = (T) => {
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0, 0, W, H);
+      segs.forEach((sg, i) => {
+        const t = T - sg.start;
+        if (t < 0 || t > sg.dur) return;
+        if (sg.kind === "video" && sg.v.paused && !sg.done) sg.v.play().catch(() => {});
+        if (sg.kind === "video" && t > sg.dur - 0.05) { sg.v.pause(); sg.done = true; }
+        // Fade in over the previous shot (from black for the first), and fade the last one out to black.
+        const fin = i === 0 ? Math.min(1, t / 0.5) : Math.min(1, t / XF);
+        const fout = i === segs.length - 1 ? Math.min(1, (sg.dur - t) / 0.6) : 1;
+        ctx.globalAlpha = Math.max(0, Math.min(fin, fout));
+        drawSeg(sg, t);
+      });
+      ctx.globalAlpha = 1;
+    };
+
+    frame(0);
+    const chunks = [];
+    const rec = new MediaRecorder(canvas.captureStream(30), { mimeType: mime, videoBitsPerSecond: 8e6 });
+    rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+    const stopped = new Promise((res) => { rec.onstop = res; });
+    c.rec = rec;
+    rec.start(500);
+    status("Recording… keep the screen on.");
+    const t0 = performance.now();
+    await new Promise((res) => {
+      const step = () => {
+        if (gone()) return res();
+        const T = (performance.now() - t0) / 1000;
+        frame(Math.min(T, total));
+        const bar = $("#clipBar");
+        if (bar) bar.style.width = `${Math.min(100, (T / total) * 100)}%`;
+        if (T >= total) return res();
+        requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    });
+    rec.stop();
+    await stopped;
+    segs.forEach((sg) => sg.v && sg.v.pause());
+    c.running = false;
+    if (gone() || !$("#clipResult")) return;
+    c.blob = new Blob(chunks, { type: mime.split(";")[0] });
+    c.ext = mime.includes("mp4") ? "mp4" : "webm";
+    const res = $("#clipResult");
+    res.src = URL.createObjectURL(c.blob);
+    res.hidden = false;
+    $(".clip-stage").hidden = $(".clip-progress").hidden = true;
+    status(`Done: ${Math.round(total)} seconds.`);
+    $("#clipActions").innerHTML = `<button type="button" class="btn ghost" data-action="clipAgain">Make another</button>
+      <button type="button" class="btn ghost" data-action="clipRoll">Save to camera roll</button>
+      <button type="button" class="btn" data-action="clipKeep">Add to project</button>`;
+  }
+  // Switching away from the app pauses drawing, which would spoil the recording, so stop instead.
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden && clip && clip.running) { clip.cancelled = true; if (clip.rec && clip.rec.state !== "inactive") clip.rec.stop(); toast("Clip stopped because the app was closed. Try again with the screen on."); clipReset(); }
+  });
+  function clipReset() {
+    if (!$(".clip-opts")) return;
+    $(".clip-opts").hidden = false;
+    $(".clip-stage").hidden = $(".clip-progress").hidden = true;
+    $("#clipResult").hidden = true;
+    $("#clipStatus").textContent = "";
+    $("#clipActions").innerHTML = `<button type="button" class="btn ghost" data-action="close">Cancel</button>
+      <button type="button" class="btn" data-action="clipMake">▶ Make clip</button>`;
+  }
+  const clipFile = () => new File([clip.blob], `${(clip.p.code || "project").replace(/[^\w-]+/g, "")}-clip.${clip.ext}`, { type: clip.blob.type });
 
   // ---------- photo editor (rotate + crop) & video trim ----------
   const fmtSecs = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, "0")}`;
@@ -1340,6 +1607,23 @@
     exportBackup: () => exportBackup($("#withVideos").checked).catch(() => toast("Backup failed")),
     importBackup: () => $("#importInput").click(),
     exportCSV,
+    clipOpen: (el) => clipOpen(pOf(el)).catch(() => toast("Couldn't open the clip maker")),
+    clipMake: () => clipMake().catch(() => { if (clip) clip.running = false; toast("Couldn't make the clip"); clipReset(); }),
+    clipCancel() { if (!clip) return; clip.cancelled = true; if (clip.rec && clip.rec.state !== "inactive") clip.rec.stop(); clipReset(); },
+    clipAgain: clipReset,
+    clipRoll: () => saveToRoll([clipFile()]),
+    async clipKeep() {
+      const { p } = clip, f = clipFile(), id = uid();
+      try {
+        await media.put({ id, kind: "video", type: f.type, name: f.name, blob: clip.blob, created: Date.now(), clip: true });
+      } catch { return toast("Not enough storage space on this device"); }
+      p.videos.push(id);
+      p.updated = Date.now();
+      save();
+      closeModal();
+      render();
+      toast("Clip added to the project's videos");
+    },
     editPhoto: (el) => openPhotoEditor(pOf(el), Number(el.dataset.i)),
     edRotate(el) { ed.rot = (ed.rot + Number(el.dataset.d) + 4) % 4; fitCrop(); drawEditor(); },
     edReset() { ed.rot = 0; ed.ratio = "free"; fitCrop(); drawEditor(); document.querySelectorAll(".ed-ratios .chip").forEach((c) => c.classList.toggle("on", c.dataset.r === "free")); },
@@ -1522,6 +1806,7 @@
       if (list && r.name === "list") { list.innerHTML = listHTML(); hydrate(); }
       return;
     }
+    if (t.id === "clipShape" || t.id === "clipPace" || t.id === "clipTitle" || t.id === "clipEnd") return clipUpdateLen();
     if (t.id === "importInput") {
       const file = t.files[0];
       t.value = "";
@@ -1573,6 +1858,8 @@
     if (draft && draft.added.length) { e.preventDefault(); cancelModal(); }
   });
   modal.addEventListener("close", () => {
+    if (clip && clip.running) { clip.cancelled = true; if (clip.rec && clip.rec.state !== "inactive") clip.rec.stop(); }
+    clip = null;
     modal.innerHTML = "";
     document.body.dataset.line = route().line || "";
     ed = null;

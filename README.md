@@ -22,6 +22,7 @@ It then opens like a normal app and works without internet. If you added the old
 - **Fields follow the status:** For sale shows the asking price and where it's listed; Sold shows the full sale details; Gifted shows who it was for, the date and occasion; Kept shows where it lives. The completion date appears once a piece is finished.
 - **Edit photos:** open a photo and tap **✂︎ Edit** to rotate or crop it (free, square, 4:3 or 3:4). Saving replaces the photo.
 - **Trim videos:** tap **✂︎ Trim** under a video to set start and end points. The app only plays that part; the original file is kept.
+- **Highlight clip:** tap **🎬 Make a clip** on a project to turn its photos and videos into a short video: a title card, each shot in the order you added it with slow zooms and cross-fades, the cover photo as the reveal, and a JT Creations end card. Choose portrait, square or landscape and the pace. It records in real time (keep the screen on), is silent, and can be added to the project, saved to your camera roll or shared.
 - **Save to camera roll:** open any photo, or look under any video, and tap **Save to camera roll**. On iPhone, tap **Save Image** / **Save Video** in the menu that pops up.
 - **Timer:** tap ▶ Start when you begin working and ■ Stop when you finish. It keeps counting even if you close the app. Open **Time log** to fix a session you forgot to stop, delete an entry (×), add time by hand, or **Reset timer** back to zero.
 - Sale details: if you enter a materials cost, the app works out your profit and what you earned per hour.
