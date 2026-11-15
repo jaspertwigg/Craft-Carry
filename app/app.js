@@ -318,9 +318,10 @@
     let added = 0;
     for (const file of files) {
       try {
+        const taken = await readTaken(file, kind);
         const blob = kind === "photo" ? await shrinkImage(file) : file;
         const id = uid();
-        await media.put({ id, kind, type: blob.type || file.type, name: file.name, blob, created: Date.now() });
+        await media.put({ id, kind, type: blob.type || file.type, name: file.name, blob, created: Date.now(), taken });
         p[kind === "photo" ? "photos" : "videos"].push(id);
         if (p === draft) draft.added.push(id);
         added++;
@@ -898,17 +899,118 @@
   const clipMime = () => window.MediaRecorder && ["video/mp4;codecs=avc1", "video/mp4", "video/webm;codecs=vp9", "video/webm"]
     .find((t) => MediaRecorder.isTypeSupported(t));
   const loadImage = (src) => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; });
-  // Photos/videos in the order they were added, finishing on the cover photo; clips made earlier are left out.
+  // When a photo or video was taken, from the camera's own record: EXIF DateTimeOriginal in a JPEG, or
+  // the creation time in an MP4/MOV header. 0 if it can't be found.
+  async function readTaken(blob, kind) {
+    try { return kind === "photo" ? await jpegTaken(blob) : await movieTaken(blob); } catch { return 0; }
+  }
+  async function jpegTaken(blob) {
+    const d = new DataView(await blob.slice(0, 256 * 1024).arrayBuffer());
+    if (d.getUint16(0) !== 0xffd8) return 0;
+    for (let o = 2; o + 4 < d.byteLength;) {
+      const marker = d.getUint16(o), len = d.getUint16(o + 2);
+      if (marker === 0xffe1 && d.getUint32(o + 4) === 0x45786966) return tiffDate(d, o + 10);
+      if ((marker & 0xff00) !== 0xff00 || marker === 0xffda) return 0;
+      o += 2 + len;
+    }
+    return 0;
+  }
+  function tiffDate(d, t) {
+    const le = d.getUint16(t) === 0x4949, u16 = (o) => d.getUint16(t + o, le), u32 = (o) => d.getUint32(t + o, le);
+    const find = (ifd, tag) => {
+      for (let i = 0, n = u16(ifd); i < n; i++) if (u16(ifd + 2 + i * 12) === tag) return ifd + 2 + i * 12;
+      return -1;
+    };
+    const ptr = find(u32(4), 0x8769);
+    let e = ptr >= 0 ? find(u32(ptr + 8), 0x9003) : -1;
+    if (e < 0) e = find(u32(4), 0x0132);
+    if (e < 0) return 0;
+    const at = t + u32(e + 8);
+    const txt = String.fromCharCode(...new Uint8Array(d.buffer, d.byteOffset + at, 19));
+    const m = txt.match(/^(\d{4}):(\d\d):(\d\d) (\d\d):(\d\d):(\d\d)/);
+    return m ? new Date(+m[1], m[2] - 1, +m[3], +m[4], +m[5], +m[6]).getTime() : 0;
+  }
+  // Walk the top-level boxes (moov is often at the end) without reading the whole video into memory.
+  async function movieTaken(blob) {
+    const read = async (o, n) => new DataView(await blob.slice(o, o + n).arrayBuffer());
+    for (let o = 0; o + 8 <= blob.size;) {
+      const h = await read(o, 16);
+      let size = h.getUint32(0);
+      const type = String.fromCharCode(h.getUint8(4), h.getUint8(5), h.getUint8(6), h.getUint8(7));
+      if (size === 1) size = Number(h.getBigUint64(8));
+      else if (size === 0) size = blob.size - o;
+      if (size < 8) return 0;
+      if (type === "moov") {
+        const mv = await read(o, Math.min(size, 4 * 1024 * 1024));
+        for (let i = 8; i + 28 < mv.byteLength; i++) {
+          if (mv.getUint32(i) !== 0x6d766864) continue; // "mvhd"
+          const secs = mv.getUint8(i + 4) === 1 ? Number(mv.getBigUint64(i + 8)) : mv.getUint32(i + 8);
+          return secs > 0 ? (secs - 2082844800) * 1000 : 0; // seconds since 1904
+        }
+        return 0;
+      }
+      o += size;
+    }
+    return 0;
+  }
+  // A tiny greyscale copy of a photo, for spotting near-identical shots and picking the sharpest.
+  async function photoLook(blob) {
+    const bmp = await createImageBitmap(blob);
+    const c = document.createElement("canvas");
+    c.width = c.height = 48;
+    const g = c.getContext("2d", { willReadFrequently: true });
+    g.drawImage(bmp, 0, 0, 48, 48);
+    bmp.close && bmp.close();
+    const px = g.getImageData(0, 0, 48, 48).data, grey = new Float32Array(48 * 48);
+    for (let i = 0; i < grey.length; i++) grey[i] = px[i * 4] * 0.3 + px[i * 4 + 1] * 0.59 + px[i * 4 + 2] * 0.11;
+    let sum = 0, sum2 = 0, n = 0;
+    for (let y = 1; y < 47; y++) for (let x = 1; x < 47; x++) {
+      const i = y * 48 + x, lap = 4 * grey[i] - grey[i - 1] - grey[i + 1] - grey[i - 48] - grey[i + 48];
+      sum += lap; sum2 += lap * lap; n++;
+    }
+    return { grey, sharp: sum2 / n - (sum / n) ** 2 };
+  }
+  const lookDiff = (a, b) => { let d = 0; for (let i = 0; i < a.grey.length; i++) d += Math.abs(a.grey[i] - b.grey[i]); return d / a.grey.length; };
+
+  // Choose the running order: everything in the order it was taken (or added, if the camera didn't say),
+  // finished-piece photos grouped at the end with the cover last as the reveal, and runs of near-identical
+  // photos cut down to the sharpest one. Clips made earlier are left out.
   async function clipShots(p) {
     const recs = [];
     for (const id of [...p.photos, ...p.videos]) {
       const r = await media.get(id).catch(() => null);
-      if (r && !r.clip) recs.push(r);
+      if (!r || r.clip) continue;
+      if (!r.taken) r.taken = await readTaken(r.blob, r.kind);
+      if (r.kind === "photo") r.look = await photoLook(r.blob).catch(() => null);
+      recs.push(r);
     }
-    recs.sort((a, b) => (a.created || 0) - (b.created || 0));
-    const cover = p.photos[0], i = recs.findIndex((r) => r.id === cover);
-    if (i >= 0 && recs.length > 1) recs.push(recs.splice(i, 1)[0]);
-    return recs;
+    const when = (r) => r.taken || r.created || 0;
+    const cover = p.photos[0];
+    const doneFrom = !p.datesUnknown && p.end ? parse(p.end).getTime() : Infinity;
+    const finished = (r) => r.kind === "photo" && (r.id === cover || (r.taken && r.taken >= doneFrom));
+    const byTime = (a, b) => when(a) - when(b) || (a.created || 0) - (b.created || 0);
+    const build = recs.filter((r) => !finished(r)).sort(byTime);
+    const reveal = recs.filter(finished).sort((a, b) => (a.id === cover) - (b.id === cover) || byTime(a, b));
+    let dropped = 0;
+    const thin = (list) => {
+      const out = [];
+      for (const r of list) {
+        const prev = out[out.length - 1];
+        // Only shots taken within a few minutes of each other count as repeats; without camera times,
+        // only practically identical ones do. Losing a real step would be worse than keeping a repeat.
+        const close = prev && prev.taken && r.taken && Math.abs(r.taken - prev.taken) < 3 * 60e3;
+        const noTimes = prev && (!prev.taken || !r.taken);
+        if (prev && r.look && prev.look && (close || noTimes) && lookDiff(r.look, prev.look) < (close ? 14 : 3)) {
+          dropped++;
+          // Keep the sharper of the two, but never lose the cover photo.
+          if (r.id === cover || (prev.id !== cover && r.look.sharp > prev.look.sharp)) out[out.length - 1] = r;
+          continue;
+        }
+        out.push(r);
+      }
+      return out;
+    };
+    return { shots: [...thin(build), ...thin(reveal)], dropped };
   }
   function clipEstimate(n, opts) {
     const pace = CLIP_PACE[opts.pace];
@@ -916,14 +1018,17 @@
     return Math.max(1, Math.round(secs - XF * Math.max(0, n.photos + n.videos + opts.title + opts.end - 1)));
   }
   async function clipOpen(p) {
-    const shots = await clipShots(p);
+    toast("Working out the best order…");
+    const { shots, dropped } = await clipShots(p);
     const n = { photos: shots.filter((r) => r.kind === "photo").length, videos: shots.filter((r) => r.kind === "video").length };
     clip = { p, shots, n, blob: null, running: false };
     const sel = (id, opts, def) => `<select id="${id}">${opts.map(([v, l]) => `<option value="${v}"${v === def ? " selected" : ""}>${l}</option>`).join("")}</select>`;
     openModal(`<div class="form">
       ${sheetHead("Make a clip")}
       <div class="sheet-body">
-        <p class="hint">Uses ${n.photos} photo${n.photos === 1 ? "" : "s"} and ${n.videos} video${n.videos === 1 ? "" : "s"}, in the order you added them, finishing on the cover photo.</p>
+        <div class="clip-order">${shots.map((r, i) => `<span class="co">${r.kind === "photo"
+          ? `<img alt="" ${mediaAttr(r.id)}>` : `<video muted playsinline preload="metadata" ${mediaAttr(r.id)}></video><b>▶</b>`}<i>${i + 1}</i></span>`).join("")}</div>
+        <p class="hint">${n.photos} photo${n.photos === 1 ? "" : "s"} and ${n.videos} video${n.videos === 1 ? "" : "s"}, ordered by when they were taken and finishing on the cover photo${dropped ? `. ${dropped} near-identical photo${dropped === 1 ? " was" : "s were"} left out` : ""}.</p>
         <div class="clip-opts">
           <label>Shape${sel("clipShape", [["portrait", "Portrait 9:16 (Reels, Stories)"], ["square", "Square"], ["landscape", "Landscape 16:9"]], state.settings.clipShape || "portrait")}</label>
           <label>Pace${sel("clipPace", [["quick", "Quick"], ["normal", "Normal"], ["slow", "Slow"]], state.settings.clipPace || "normal")}</label>
